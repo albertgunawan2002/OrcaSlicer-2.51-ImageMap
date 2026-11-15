@@ -38,8 +38,15 @@ target_include_directories(Clipper2
   PUBLIC Clipper2Lib/include
 )
 
+# Engine nodes are allocated through tbbmalloc (see clipper.engine.cpp).
+target_link_libraries(Clipper2 PRIVATE TBB::tbbmalloc)
+
 if (WIN32)
-  target_compile_options(Clipper2 PRIVATE /W4 /WX)
+  if (MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(Clipper2 PRIVATE /W4 /WX)
+  elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(Clipper2 PRIVATE /W4)
+  endif()
 else()
   target_compile_options(Clipper2 PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_link_libraries(Clipper2 PUBLIC -lm)

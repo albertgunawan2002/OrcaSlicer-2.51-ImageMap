@@ -17,10 +17,12 @@
 #include <vector>
 
 #include "libslic3r/MeshBoolean.hpp"
+#include "libslic3r/MeshRepair.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/ModelTextureDataRemap.hpp"
 #include "libslic3r/format.hpp"
 #include "../GUI/I18N.hpp"
+#include "slic3r/GUI/Widgets/ProgressDialog.hpp"
 
 #include <wx/checkbox.h>
 #include <wx/dialog.h>
@@ -414,13 +416,54 @@ public:
 
 // Orca: Main function to repair model objects using CGAL, with progress dialog and cancellation support.
 // Returns false if fixing was canceled. fix_result contains error message if failed.
+static bool fix_model_with_cgal_gui_impl(ModelObject                &model_object,
+                                         int                         volume_idx,
+                                         GUI::ProgressDialog        &progress_dialog,
+                                         const wxString             &msg_header,
+                                         std::string                &fix_result,
+                                         ModelRepairColorRemapStats *color_remap_stats,
+                                         ModelRepairPromptState     *prompt_state);
+
 bool fix_model_with_cgal_gui(ModelObject                &model_object,
                              int                         volume_idx,
                              GUI::ProgressDialog        &progress_dialog,
                              const wxString             &msg_header,
                              std::string                &fix_result,
+                             bool                        keep_painting,
+                             bool                       *modified,
                              ModelRepairColorRemapStats *color_remap_stats,
                              ModelRepairPromptState     *prompt_state)
+{
+    // ImageMap: color data and region painting are remapped by this implementation itself (see the
+    // repair options prompt), so keep_painting only decides whether the other paint layers survive.
+    std::vector<std::optional<TriangleSelector::SavedPainting>> saved_paintings;
+    if (keep_painting)
+        for (const ModelVolume *volume : model_object.volumes)
+            saved_paintings.emplace_back(volume->save_painting());
+    if (modified != nullptr)
+        *modified = false;
+    const size_t volume_count_before = model_object.volumes.size();
+    std::vector<ModelVolume*> volumes_before(model_object.volumes.begin(), model_object.volumes.end());
+    const bool result = fix_model_with_cgal_gui_impl(model_object, volume_idx, progress_dialog, msg_header, fix_result, color_remap_stats, prompt_state);
+    if (result && fix_result.empty()) {
+        if (modified != nullptr)
+            *modified = true;
+        // Restore paint on volumes that survived unchanged in identity (no split / delete).
+        if (keep_painting && model_object.volumes.size() == volume_count_before)
+            for (size_t i = 0; i < model_object.volumes.size(); ++i)
+                if (model_object.volumes[i] == volumes_before[i] && saved_paintings[i])
+                    model_object.volumes[i]->restore_painting(saved_paintings[i], true);
+    }
+    return result;
+}
+
+static bool fix_model_with_cgal_gui_impl(ModelObject                &model_object,
+                                         int                         volume_idx,
+                                         GUI::ProgressDialog        &progress_dialog,
+                                         const wxString             &msg_header,
+                                         std::string                &fix_result,
+                                         ModelRepairColorRemapStats *color_remap_stats,
+                                         ModelRepairPromptState     *prompt_state)
 {
     ModelRepairColorRemapStats local_color_stats;
     ModelRepairPromptState local_prompt_state;
@@ -554,7 +597,7 @@ bool fix_model_with_cgal_gui(ModelObject                &model_object,
 
                 size_t parts_count = 1;
                 if (repair_options.split_before_repair && volume->mesh().is_splittable()) {
-                    parts_count = volume->split(1);
+                    parts_count = volume->split(1, false);
                     if (parts_count > 1) {
                         const std::string msg = Slic3r::format(L("Split into %1% parts"), parts_count);
                         on_progress(RepairProgressStage::Repair, msg.c_str(), 15);
@@ -623,7 +666,7 @@ bool fix_model_with_cgal_gui(ModelObject                &model_object,
                             mesh_changed = weld_same_position_vertices(mesh);
                         if (its_num_open_edges(mesh.its) != 0) {
                             std::string error;
-                            if (!MeshBoolean::cgal::repair(mesh, nullptr, &error))
+                            if (!repair_mesh(mesh, nullptr, &error))
                                 throw Slic3r::RuntimeError(error.empty() ? L("Repair failed") : error.c_str());
 
                             mesh_changed = true;

@@ -7,6 +7,9 @@
 #include <functional>
 #include <map>
 #include <string>
+#include "objparser.hpp"
+#include "libslic3r/Point.hpp"
+#include <admesh/stl.h>
 #include <unordered_map>
 #include <vector>
 namespace Slic3r {
@@ -57,6 +60,7 @@ struct ObjInfo {
     bool              has_uv_png{false};
     std::string       single_texture_image;
     ObjTriangulationInfo triangulation_info;
+    std::vector<ObjParser::ObjUseMtl>      usemtls; // material spans, for texture import
 
 };
 struct ObjDialogInOut
@@ -71,10 +75,20 @@ struct ObjDialogInOut
     std::string lost_material_name{""};
 };
 typedef std::function<void(ObjDialogInOut &in_out)> ObjImportColorFn;
-extern bool load_obj(const char *path, TriangleMesh *mesh, ObjInfo &vertex_colors, std::string &message,
+extern bool load_obj(const char *path, TriangleMesh *mesh, ObjInfo &vertex_colors, std::string &message, ObjParser::MtlData *out_mtl = nullptr,
                      ObjTriangulationFn objTriangulationFn = nullptr);
-extern bool load_obj(const char *path, Model *model, ObjInfo &vertex_colors, std::string &message,
-                     const char *object_name = nullptr, ObjTriangulationFn objTriangulationFn = nullptr);
+extern bool load_obj(const char *path, Model *model, ObjInfo &vertex_colors, std::string &message, const char *object_name = nullptr,
+                     ObjParser::MtlData *out_mtl = nullptr, ObjTriangulationFn objTriangulationFn = nullptr);
+
+struct TexturedMesh;
+// Build a TexturedMesh (vertices + per-face UVs + the texture files named by map_Kd) from a
+// parsed OBJ plus its material table, so the texture-to-color importer can sample face colours.
+extern bool obj_to_textured_mesh(
+    const ObjInfo& obj_info,
+    const indexed_triangle_set& its,
+    const ObjParser::MtlData& mtl_data,
+    const std::string& obj_directory,
+    TexturedMesh& out);
 
 extern bool store_obj(const char *path, TriangleMesh *mesh);
 extern bool store_obj(const char *path, ModelObject *model);

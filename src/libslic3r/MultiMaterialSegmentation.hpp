@@ -4,14 +4,24 @@
 #include "Line.hpp"
 
 #include <functional>
+#include <cstddef>
 #include <utility>
 #include <vector>
+
+#include <boost/polygon/polygon.hpp>
+
+#include "Line.hpp"
+#include "Point.hpp"
+#include "libslic3r.h"
 
 namespace Slic3r {
 
 class ExPolygon;
 class ModelVolume;
 class PrintObject;
+class PrintConfig;
+class PrintObjectConfig;
+class PrintRegionConfig;
 class FacetsAnnotation;
 
 using ExPolygons = std::vector<ExPolygon>;
@@ -57,6 +67,15 @@ std::vector<std::vector<ExPolygons>> fuzzy_skin_segmentation_by_painting(const P
 
 std::vector<ExPolygons> segmentation_by_colored_contours(const std::vector<ColoredLines> &colorized_contours,
                                                          size_t                           num_facets_states);
+
+// Returns the part of each layer of a painted modifier's slices that its paint covers.
+std::vector<ExPolygons> painted_modifier_segmentation(const PrintObject             &print_object,
+                                                      const ModelVolume             &painted_modifier,
+                                                      const std::vector<ExPolygons> &slices,
+                                                      const std::function<void()>   &throw_on_cancel_callback);
+
+// Effective outer-wall line width for a region, resolved against its own nozzle with PrintRegion::flow's fallback.
+double resolve_outer_wall_line_width(const PrintRegionConfig &region_config, const PrintObjectConfig &object_config, const PrintConfig &print_config);
 
 } // namespace Slic3r
 

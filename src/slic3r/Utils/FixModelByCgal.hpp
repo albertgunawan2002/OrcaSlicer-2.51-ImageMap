@@ -3,7 +3,9 @@
 
 #include <cstddef>
 #include <string>
-#include "../GUI/Widgets/ProgressDialog.hpp"
+#include <wx/string.h>
+
+namespace Slic3r::GUI { class ProgressDialog; }
 
 namespace Slic3r {
 
@@ -51,12 +53,14 @@ struct ModelRepairPromptState
     bool region_painting_remap = true;
 };
 
-// Return false if fixing was canceled. fix_result is empty on success.
+// Return false if fixing was canceled. fix_result is empty on success; modified tells whether any mesh changed.
 extern bool fix_model_with_cgal_gui(ModelObject                 &model_object,
                                     int                          volume_idx,
                                     GUI::ProgressDialog         &progress_dlg,
                                     const wxString              &msg_header,
                                     std::string                 &fix_result,
+                                    bool                         keep_painting,
+                                    bool                        *modified = nullptr,
                                     ModelRepairColorRemapStats  *color_remap_stats = nullptr,
                                     ModelRepairPromptState      *prompt_state = nullptr);
 

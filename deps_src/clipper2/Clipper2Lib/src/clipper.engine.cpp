@@ -1,15 +1,18 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
-* Date      :  21 February 2026                                                *
+* Date      :  5 November 2025                                                 *
 * Website   :  https://www.angusj.com                                          *
-* Copyright :  Angus Johnson 2010-2026                                         *
+* Copyright :  Angus Johnson 2010-2025                                         *
 * Purpose   :  This is the main polygon clipping module                        *
 * License   :  https://www.boost.org/LICENSE_1_0.txt                           *
 *******************************************************************************/
 
 #include "clipper2/clipper.engine.h"
 #include "clipper2/clipper.h"
+#include <limits>
 #include <stdexcept>
+#include <new>
+#include <oneapi/tbb/scalable_allocator.h>
 
 // https://github.com/AngusJohnson/Clipper2/discussions/334
 // #discussioncomment-4248602
@@ -27,10 +30,30 @@ namespace Clipper2Lib_Z {
 namespace Clipper2Lib {
 #endif
 
+  // Orca: tbbmalloc scales far better than the default heap when all slicing threads clip at once.
+  static void* NodeAlloc(size_t size)
+  {
+    if (void* p = scalable_malloc(size)) return p;
+    throw std::bad_alloc();
+  }
+
+#define CLIPPER2_DEFINE_NODE_ALLOCATOR(T) \
+  void* T::operator new(size_t size) { return NodeAlloc(size); } \
+  void T::operator delete(void* ptr) noexcept { scalable_free(ptr); } \
+  void* T::operator new[](size_t size) { return NodeAlloc(size); } \
+  void T::operator delete[](void* ptr) noexcept { scalable_free(ptr); }
+  CLIPPER2_DEFINE_NODE_ALLOCATOR(Vertex)
+  CLIPPER2_DEFINE_NODE_ALLOCATOR(OutPt)
+  CLIPPER2_DEFINE_NODE_ALLOCATOR(OutRec)
+  CLIPPER2_DEFINE_NODE_ALLOCATOR(Active)
+  CLIPPER2_DEFINE_NODE_ALLOCATOR(LocalMinima)
+  CLIPPER2_DEFINE_NODE_ALLOCATOR(PolyPath)
+#undef CLIPPER2_DEFINE_NODE_ALLOCATOR
+
   static const Rect64 invalid_rect = Rect64(false);
 
-  // Every closed path (ie polygon) is made up of a series of vertices forming edge
-  // 'bounds' that alternate between ascending bounds (containing edges going up
+  // Every closed path (ie polygon) is made up of a series of vertices forming edge 
+  // 'bounds' that alternate between ascending bounds (containing edges going up 
   // relative to the Y-axis) and descending bounds. 'Local Minima' refers to
   // vertices where ascending and descending bounds join at the bottom, and
   // 'Local Maxima' are where ascending and descending bounds join at the top.
@@ -579,7 +602,7 @@ namespace Clipper2Lib {
 
   inline bool Path2ContainsPath1(OutPt* op1, OutPt* op2)
   {
-    // this function accommodates rounding errors that
+    // this function accommodates rounding errors that 
     // can cause path micro intersections
     PointInPolygonResult pip = PointInPolygonResult::IsOn;
     OutPt* op = op1;
@@ -621,7 +644,7 @@ namespace Clipper2Lib {
         {return a + path.size(); });
     if (total_vertex_count == 0) return;
 
-    Vertex* allVertices = new Vertex[total_vertex_count], * v = allVertices;
+    Vertex* vertices = new Vertex[total_vertex_count], * v = vertices;
     for (const Path64& path : paths)
     {
       //for each path create a circular double linked list of vertices
@@ -713,7 +736,7 @@ namespace Clipper2Lib {
       }
     } // end processing current path
 
-    vertexLists.emplace_back(allVertices);
+    vertexLists.emplace_back(vertices);
   }
 
   //------------------------------------------------------------------------------
@@ -1650,21 +1673,32 @@ namespace Clipper2Lib {
   void ClipperBase::FixSelfIntersects(OutRec* outrec)
   {
     OutPt* op2 = outrec->pts;
-    if (op2->prev == op2->next->next)
+    if (op2->prev == op2->next->next) 
       return; // because triangles can't self-intersect
     for (; ; )
     {
       if (SegmentsIntersect(op2->prev->pt,
         op2->pt, op2->next->pt, op2->next->next->pt))
       {
-        if (op2 == outrec->pts || op2->next == outrec->pts)
-          outrec->pts = outrec->pts->prev;
-        DoSplitOp(outrec, op2);
-        if (!outrec->pts) break;
-        op2 = outrec->pts;
-        if (op2->prev == op2->next->next)
-          break; // again, because triangles can't self-intersect
-        continue;
+        if (SegmentsIntersect(op2->prev->pt,
+          op2->pt, op2->next->next->pt, op2->next->next->next->pt))
+        {
+          // adjacent intersections (ie a micro self-intersections)
+          op2 = DuplicateOp(op2, false);
+          op2->pt = op2->next->next->next->pt;
+          op2 = op2->next;
+        }
+        else
+        {
+          if (op2 == outrec->pts || op2->next == outrec->pts)
+            outrec->pts = outrec->pts->prev;
+          DoSplitOp(outrec, op2);
+          if (!outrec->pts) break;
+          op2 = outrec->pts;
+          if (op2->prev == op2->next->next)
+            break; // again, because triangles can't self-intersect
+          continue;
+        }
       }
       else
         op2 = op2->next;
@@ -1805,14 +1839,14 @@ namespace Clipper2Lib {
 
       switch (fillrule_)
       {
-      case FillRule::Positive:
-        if (edge_c->wind_cnt != 1) return;
+      case FillRule::Positive: 
+        if (edge_c->wind_cnt != 1) return; 
         break;
-      case FillRule::Negative:
-        if (edge_c->wind_cnt != -1) return;
+      case FillRule::Negative: 
+        if (edge_c->wind_cnt != -1) return; 
         break;
-      default:
-        if (std::abs(edge_c->wind_cnt) != 1) return;
+      default: 
+        if (std::abs(edge_c->wind_cnt) != 1) return; 
       }
 
 #ifdef USINGZ
@@ -1933,7 +1967,7 @@ namespace Clipper2Lib {
     const bool e1_windcnt_in_01 = old_e1_windcnt == 0 || old_e1_windcnt == 1;
     const bool e2_windcnt_in_01 = old_e2_windcnt == 0 || old_e2_windcnt == 1;
 
-    if ((!IsHotEdge(e1) && !e1_windcnt_in_01) ||
+    if ((!IsHotEdge(e1) && !e1_windcnt_in_01) || 
       (!IsHotEdge(e2) && !e2_windcnt_in_01))
         return;
 
@@ -2103,10 +2137,12 @@ namespace Clipper2Lib {
   }
 
 
-  inline void ClipperBase::AdjustCurrXAndCopyToSEL(const int64_t top_y)
+  inline bool ClipperBase::AdjustCurrXAndCopyToSEL(const int64_t top_y)
   {
     Active* e = actives_;
     sel_ = e;
+    bool sorted = true;
+    int64_t prev_x = std::numeric_limits<int64_t>::min();
     while (e)
     {
       e->prev_in_sel = e->prev_in_ael;
@@ -2115,8 +2151,11 @@ namespace Clipper2Lib {
       // it is safe to ignore 'joined' edges here because
       // if necessary they will be split in IntersectEdges()
       e->curr_x = TopX(*e, top_y);
+      sorted = sorted && e->curr_x >= prev_x;
+      prev_x = e->curr_x;
       e = e->next_in_ael;
     }
+    return sorted;
   }
 
   bool ClipperBase::ExecuteInternal(ClipType ct, FillRule fillrule, bool use_polytrees)
@@ -2297,7 +2336,7 @@ namespace Clipper2Lib {
         }
 
         if (using_polytree_) //#498, #520, #584, D#576, #618
-        {
+        {          
           if (Path2ContainsPath1(or1->pts, or2->pts))
           {
             //swap or1's & or2's pts
@@ -2328,7 +2367,7 @@ namespace Clipper2Lib {
         if (using_polytree_)
         {
           SetOwner(or2, or1);
-          if (or2->splits)
+          if (or2->splits) 
             MoveSplits(or2, or1); //#618
         }
         else
@@ -2386,7 +2425,9 @@ namespace Clipper2Lib {
 
     //Calculate edge positions at the top of the current scanbeam, and from this
     //we will determine the intersections required to reach these new positions.
-    AdjustCurrXAndCopyToSEL(top_y);
+    // Orca: edges still in order have not crossed, which holds for most scanbeams, and the
+    // merge sort below would only confirm that in log2(n) passes over every edge.
+    if (AdjustCurrXAndCopyToSEL(top_y)) return false;
     //Find all edge intersections in the current scanbeam using a stable merge
     //sort that ensures only adjacent edges are intersecting. Intersect info is
     //stored in FIntersectList ready to be processed in ProcessIntersectList.
@@ -2936,7 +2977,7 @@ namespace Clipper2Lib {
     // nb: use indexing (not an iterator) in case 'splits' is modified inside this loop (#1029)
     for (size_t idx = 0; idx < splits->size(); ++idx)
     {
-      OutRec* split = (*splits)[idx];
+      OutRec* split = (*splits)[idx]; 
       if (!split->pts && split->splits &&
         CheckSplitOwner(outrec, split->splits)) return true; //#942
       split = GetRealOutRec(split);
@@ -2944,17 +2985,17 @@ namespace Clipper2Lib {
       split->recursive_split = outrec; // prevent infinite loops
 
       if (split->splits && CheckSplitOwner(outrec, split->splits))
-        return true;
+        return true;    
 
       if (!CheckBounds(split) || !split->bounds.Contains(outrec->bounds) ||
         !Path2ContainsPath1(outrec->pts, split->pts)) continue;
-
+     
       if (!IsValidOwner(outrec, split)) // split is owned by outrec! (#957)
           split->owner = outrec->owner;
 
       outrec->owner = split;
       return true;
-
+      
     }
     return false;
   }

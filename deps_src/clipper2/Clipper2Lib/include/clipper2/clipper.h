@@ -19,9 +19,9 @@
 #include <type_traits>
 
 #ifdef USINGZ
-  namespace Clipper2Lib_Z {
+namespace Clipper2Lib_Z {
 #else
-  namespace Clipper2Lib {
+namespace Clipper2Lib {
 #endif
 
   inline Paths64 BooleanOp(ClipType cliptype, FillRule fillrule,
@@ -138,7 +138,7 @@
     JoinType jt, EndType et, double miter_limit = 2.0,
     double arc_tolerance = 0.0)
   {
-    if (delta==0.0) return paths;
+    if (!delta) return paths;
     ClipperOffset clip_offset(miter_limit, arc_tolerance);
     clip_offset.AddPaths(paths, jt, et);
     Paths64 solution;
@@ -152,7 +152,7 @@
   {
     int error_code = 0;
     CheckPrecisionRange(precision, error_code);
-    if (delta==0.0) return paths;
+    if (!delta) return paths;
     if (error_code) return PathsD();
     const double scale = std::pow(10, precision);
     ClipperOffset clip_offset(miter_limit, arc_tolerance * scale);
@@ -162,7 +162,7 @@
     clip_offset.Execute(delta * scale, solution);
     return ScalePaths<double, int64_t>(solution, 1 / scale, error_code);
   }
-
+  
   template <typename T>
   inline Path<T> TranslatePath(const Path<T>& path, T dx, T dy)
   {
@@ -717,26 +717,26 @@
     return result;
   }
 
-
+ 
   template <typename T>
   inline bool Path2ContainsPath1(const Path<T>& path1, const Path<T>& path2)
   {
     // precondition: paths must not intersect, except for
-    // transient (and presumed 'micro') path intersections
+    // transient (and presumed 'micro') path intersections 
     PointInPolygonResult pip = PointInPolygonResult::IsOn;
     for (const Point<T>& pt : path1)
     {
       switch (PointInPolygon(pt, path2))
       {
-      case PointInPolygonResult::IsOutside:
-        if (pip == PointInPolygonResult::IsOutside) return false;
-        pip = PointInPolygonResult::IsOutside;
+      case PointInPolygonResult::IsOutside: 
+        if (pip == PointInPolygonResult::IsOutside) return false; 
+        pip = PointInPolygonResult::IsOutside; 
         break;
       case PointInPolygonResult::IsInside:
         if (pip == PointInPolygonResult::IsInside) return true;
         pip = PointInPolygonResult::IsInside;
         break;
-      default:
+      default: 
         break;
       }
     }

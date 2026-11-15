@@ -11,10 +11,7 @@
 #define SLIC3R_PACKAGE_NAME "@SLIC3R_PACKAGE_NAME@"
 #define SLIC3R_LINUX_APP_CMD "@SLIC3R_LINUX_APP_CMD@"
 #define SLIC3R_VERSION "@SLIC3R_VERSION@"
-namespace Slic3r { const char* softfever_version(); }
-namespace Slic3r { const char* git_commit_hash(); }
-#define SoftFever_VERSION (Slic3r::softfever_version())
-#define GIT_COMMIT_HASH (Slic3r::git_commit_hash())
+#define SoftFever_VERSION "@SoftFever_VERSION@"
 #define SLIC3R_BUILD_ID "@SLIC3R_BUILD_ID@"
 //#define SLIC3R_RC_VERSION "@SLIC3R_VERSION@"
 #define BBL_INTERNAL_TESTING @BBL_INTERNAL_TESTING@

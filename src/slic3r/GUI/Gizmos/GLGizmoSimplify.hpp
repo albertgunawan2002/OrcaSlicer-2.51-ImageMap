@@ -7,8 +7,19 @@
 #include "slic3r/GUI/3DScene.hpp"
 #include "libslic3r/ModelTextureDataRemap.hpp"
 #include "admesh/stl.h" // indexed_triangle_set
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <chrono>
+#include <exception>
 #include <mutex>
+#include <string>
+#include "slic3r/GUI/GLModel.hpp"
+#include <ratio>
+#include <optional>
 #include <thread>
+#include <vector>
 
 namespace Slic3r {
 class ModelVolume;

@@ -1,5 +1,6 @@
 #include "GLGizmoMeshBoolean.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
+#include "slic3r/GUI/Shortcuts.hpp"
 #include "slic3r/GUI/ImGuiWrapper.hpp"
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/GUI_Utils.hpp"
@@ -10,10 +11,36 @@
 #include "slic3r/GUI/Camera.hpp"
 #include "slic3r/GUI/MsgDialog.hpp"
 #include "slic3r/GUI/NotificationManager.hpp"
+#include <string>
+#include "slic3r/GUI/Gizmos/GLGizmoBase.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmosCommon.hpp"
+#include "libslic3r/Point.hpp"
+#include <vector>
+#include "slic3r/GUI/GUI_App.hpp"
+#include <cstddef>
+#include <limits>
+#include "libslic3r/BoundingBox.hpp"
+#include "slic3r/GUI/3DScene.hpp"
+#include "libslic3r/Color.hpp"
+#include <optional>
+#include "libslic3r/TriangleSelector.hpp"
+#include <algorithm>
+#include <imgui.h>
+#include <cereal/archives/binary.hpp>
+#include <utility>
+#include "slic3r/GUI/ObjectDataViewModel.hpp"
+#include <wx/dataview.h>
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
 #include <imgui/imgui_internal.h>
+#include "libslic3r/AppConfig.hpp"
+#include "libslic3r/Geometry.hpp"
+#include "libslic3r/Model.hpp"
+#include "libslic3r/TriangleMesh.hpp"
+#include "slic3r/GUI/I18N.hpp"
+#include "slic3r/GUI/MeshUtils.hpp"
+#include "slic3r/GUI/Selection.hpp"
 namespace Slic3r {
 namespace GUI {
 
@@ -212,7 +239,7 @@ bool GLGizmoMeshBoolean::on_mouse(const wxMouseEvent &mouse_event)
 
 bool GLGizmoMeshBoolean::on_init()
 {
-    m_shortcut_key = WXK_CONTROL_B;
+    m_shortcut = Shortcut::GizmoMeshBoolean;
     return true;
 }
 
@@ -296,6 +323,19 @@ CommonGizmosDataID GLGizmoMeshBoolean::on_get_requirements() const
         | int(CommonGizmosDataID::ObjectClipper));
 }
 
+std::optional<TriangleSelector::SavedPainting> VolumeInfo::save_painting() const
+{
+    if (wxGetApp().app_config->get_bool("keep_painting")) {
+        std::optional<TriangleSelector::SavedPainting> saved_painting = mv->save_painting();
+        if (saved_painting) {
+            saved_painting->mesh.transform(trafo);
+        }
+        return saved_painting;
+    }
+
+    return {};
+}
+
 void GLGizmoMeshBoolean::on_render_input_window(float x, float y, float bottom_limit)
 {
     y = std::min(y, bottom_limit - ImGui::GetWindowHeight());
@@ -316,9 +356,9 @@ void GLGizmoMeshBoolean::on_render_input_window(float x, float y, float bottom_l
                                          ImGui::CalcTextSize(_u8L("Subtract from").c_str()).x,
                                          ImGui::CalcTextSize(_u8L("Subtract with").c_str()).x});
 
-    const int select_btn_length = 2 * ImGui::GetStyle().FramePadding.x + std::max(ImGui::CalcTextSize(("1 " + _u8L("selected")).c_str()).x, ImGui::CalcTextSize(_u8L("Select").c_str()).x);
+    const int select_btn_length = 2 * ImGui::GetStyle().FramePadding.x + std::max(ImGui::CalcTextSize(_u8L("1 selected").c_str()).x, ImGui::CalcTextSize(_u8L("Select").c_str()).x);
 
-    auto selectable = [this](const std::string& label, bool selected, const ImVec2& size_arg) {
+    auto selectable = [](const std::string& label, bool selected, const ImVec2& size_arg) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0,0 });
 
         ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -391,7 +431,8 @@ void GLGizmoMeshBoolean::on_render_input_window(float x, float y, float bottom_l
     std::string cap_str1 = m_operation_mode != MeshBooleanOperation::Difference ? _u8L("Part 1") : _u8L("Subtract from");
     m_imgui->text(cap_str1);
     ImGui::SameLine(max_cap_length);
-    std::string select_src_str = m_src.mv ? "1 " + _u8L("selected") : _u8L("Select");
+    // TRN Mesh Boolean button label once one volume is picked.
+    std::string select_src_str = m_src.mv ? _u8L("1 selected") : _u8L("Select");
     select_src_str += "##select_source_volume";
     ImGui::PushItemWidth(select_btn_length);
     if (selectable(select_src_str, m_selecting_state == MeshBooleanSelectingState::SelectSource, ImVec2(select_btn_length, 0)))
@@ -419,7 +460,7 @@ void GLGizmoMeshBoolean::on_render_input_window(float x, float y, float bottom_l
     std::string cap_str2 = m_operation_mode != MeshBooleanOperation::Difference ? _u8L("Part 2") : _u8L("Subtract with");
     m_imgui->text(cap_str2);
     ImGui::SameLine(max_cap_length);
-    std::string select_tool_str = m_tool.mv ? "1 " + _u8L("selected") : _u8L("Select");
+    std::string select_tool_str = m_tool.mv ? _u8L("1 selected") : _u8L("Select");
     select_tool_str += "##select_tool_volume";
     ImGui::PushItemWidth(select_btn_length);
     if (selectable(select_tool_str, m_selecting_state == MeshBooleanSelectingState::SelectTool, ImVec2(select_btn_length, 0)))
@@ -510,11 +551,16 @@ void GLGizmoMeshBoolean::run_boolean_operation(const std::string &boolean_opts, 
         tool_source.fallback_color = source_base_color;
     sources.emplace_back(std::move(tool_source));
 
+    // Union and intersection keep paint from both meshes; difference only needs paint from the source.
+    std::vector<std::optional<TriangleSelector::SavedPainting>> saved_paintings{m_src.save_painting()};
+    if (boolean_opts != "A_NOT_B")
+        saved_paintings.emplace_back(m_tool.save_painting());
+
     if (had_transfer_data) {
         std::vector<MeshBoolean::mcut::ProvenancedMesh> provenanced_results;
         const bool provenance_ok = MeshBoolean::mcut::make_boolean_with_provenance(temp_src_mesh, 0, temp_tool_mesh, 1, provenanced_results, boolean_opts);
         if (provenance_ok && !provenanced_results.empty()) {
-            generate_new_volume(delete_input, provenanced_results.front().mesh, &sources, &provenanced_results.front().provenance);
+            generate_new_volume(delete_input, provenanced_results.front().mesh, saved_paintings, &sources, &provenanced_results.front().provenance);
             wxGetApp().notification_manager()->close_plater_warning_notification(warning_text);
             return;
         }
@@ -525,7 +571,7 @@ void GLGizmoMeshBoolean::run_boolean_operation(const std::string &boolean_opts, 
     if (temp_mesh_resuls.size() != 0) {
         if (had_transfer_data)
             show_mesh_boolean_color_transfer_warning_dialog();
-        generate_new_volume(delete_input, *temp_mesh_resuls.begin());
+        generate_new_volume(delete_input, *temp_mesh_resuls.begin(), saved_paintings);
         wxGetApp().notification_manager()->close_plater_warning_notification(warning_text);
     }
     else {
@@ -534,7 +580,8 @@ void GLGizmoMeshBoolean::run_boolean_operation(const std::string &boolean_opts, 
 }
 
 void GLGizmoMeshBoolean::generate_new_volume(bool delete_input,
-                                             const TriangleMesh& mesh_result,
+                                             TriangleMesh& mesh_result,
+                                             const std::vector<std::optional<TriangleSelector::SavedPainting>>& saved_paintings,
                                              const std::vector<MultiSourceTextureDataSource>* sources,
                                              const std::vector<MeshBoolean::mcut::MeshFaceProvenance>* provenance) {
 
@@ -544,6 +591,11 @@ void GLGizmoMeshBoolean::generate_new_volume(bool delete_input,
 
     // generate new volume
     ModelVolume* new_volume = curr_model_object->add_volume(std::move(mesh_result));
+
+    // Remap paintings
+    for (const auto& saved_painting : saved_paintings) {
+        new_volume->restore_painting(saved_painting, true);
+    }
 
     // assign to new_volume from old_volume
     ModelVolume* old_volume = m_src.mv;

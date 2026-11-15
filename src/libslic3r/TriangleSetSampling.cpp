@@ -1,9 +1,13 @@
 #include "TriangleSetSampling.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include "Point.hpp"
+#include <map>
 #include <random>
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
+#include <vector>
 
 namespace Slic3r {
 

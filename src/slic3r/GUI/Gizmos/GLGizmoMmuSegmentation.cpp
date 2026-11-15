@@ -1,4 +1,9 @@
 #include "GLGizmoMmuSegmentation.hpp"
+#include "slic3r/GUI/PartPlate.hpp"
+#include "slic3r/GUI/Shortcuts.hpp"
+#include "GLGizmoUtils.hpp"
+#include <boost/nowide/fstream.hpp>
+#include <boost/nowide/convert.hpp>
 
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
@@ -524,6 +529,7 @@ static void set_color_auto_paint_solid_preview_uniforms(GLShaderProgram *shader,
     shader->set_uniform("slope.actived", true);
     shader->set_uniform("slope.volume_world_normal_matrix", normal_matrix);
     shader->set_uniform("slope.normal_z", 0.f);
+    shader->set_uniform("slope.up_direction", Vec3f(build_plate_tilt_up_direction().cast<float>()));
     shader->set_uniform("slope.preview_mode", 5);
     shader->set_uniform("slope.top_z", 1.f);
     shader->set_uniform("slope.bottom_z", -1.f);
@@ -14167,7 +14173,7 @@ void GLGizmoMmuSegmentation::init_extruders_data()
 bool GLGizmoMmuSegmentation::on_init()
 {
     // BBS
-    m_shortcut_key = WXK_CONTROL_N;
+    m_shortcut = Shortcut::GizmoMmuSegmentation;
 
     // FIXME: maybe should be using GUI::shortkey_ctrl_prefix() or equivalent?
     const wxString ctrl  = _L("Ctrl+");
@@ -14383,6 +14389,7 @@ void GLGizmoMmuSegmentation::set_render_triangle_slope_uniforms(GLShaderProgram 
     shader->set_uniform("slope.actived", true);
     shader->set_uniform("slope.volume_world_normal_matrix", normal_matrix);
     shader->set_uniform("slope.normal_z", 0.f);
+    shader->set_uniform("slope.up_direction", get_tilt_up_direction());
     shader->set_uniform("slope.preview_mode", preview_mode);
     shader->set_uniform("slope.top_z", top_z);
     shader->set_uniform("slope.bottom_z", bottom_z);
@@ -14446,6 +14453,7 @@ void GLGizmoMmuSegmentation::render_extra_triangle_overlays(int mesh_id,
         shader->set_uniform("slope.actived", true);
         shader->set_uniform("slope.volume_world_normal_matrix", normal_matrix);
         shader->set_uniform("slope.normal_z", 0.f);
+        shader->set_uniform("slope.up_direction", get_tilt_up_direction());
         shader->set_uniform("slope.preview_mode", 4);
         shader->set_uniform("slope.top_z", 1.f);
         shader->set_uniform("slope.bottom_z", -1.f);
@@ -15472,30 +15480,16 @@ bool GLGizmoMmuSegmentation::on_number_key_down(int number)
     return true;
 }
 
-bool GLGizmoMmuSegmentation::on_key_down_select_tool_type(int keyCode) {
-    switch (keyCode)
-    {
-    case 'F':
-        m_current_tool = ImGui::FillButtonIcon;
-        break;
-    case 'T':
-        m_current_tool = ImGui::TriangleButtonIcon;
-        break;
-    case 'S':
-        m_current_tool = ImGui::SphereButtonIcon;
-        break;
-    case 'C':
-        m_current_tool = ImGui::CircleButtonIcon;
-        break;
-    case 'H':
-        m_current_tool = ImGui::HeightRangeIcon;
-        break;
-    case 'G':
-        m_current_tool = ImGui::GapFillIcon;
-        break;
-    default:
-        return false;
-        break;
+bool GLGizmoMmuSegmentation::on_tool_shortcut(Shortcut shortcut)
+{
+    switch (shortcut) {
+    case Shortcut::PaintToolFill:        m_current_tool = ImGui::FillButtonIcon; break;
+    case Shortcut::PaintToolTriangle:    m_current_tool = ImGui::TriangleButtonIcon; break;
+    case Shortcut::PaintToolSphere:      m_current_tool = ImGui::SphereButtonIcon; break;
+    case Shortcut::PaintToolCircle:      m_current_tool = ImGui::CircleButtonIcon; break;
+    case Shortcut::PaintToolHeightRange: m_current_tool = ImGui::HeightRangeIcon; break;
+    case Shortcut::PaintToolGapFill:     m_current_tool = ImGui::GapFillIcon; break;
+    default: return false;
     }
     return true;
 }
@@ -15558,7 +15552,7 @@ static void render_extruders_combo(const std::string& label,
 void GLGizmoMmuSegmentation::show_tooltip_information(float caption_max, float x, float y)
 {
     ImTextureID normal_id = m_parent.get_gizmos_manager().get_icon_texture_id(GLGizmosManager::MENU_ICON_NAME::IC_TOOLBAR_TOOLTIP);
-    ImTextureID hover_id  = m_parent.get_gizmos_manager().get_icon_texture_id(GLGizmosManager::MENU_ICON_NAME::IC_TOOLBAR_TOOLTIP_HOVER);
+    ImTextureID hover_id  = m_parent.get_gizmos_manager().get_icon_texture_id(GLGizmosManager::MENU_ICON_NAME::IC_TOOLBAR_TOOLTIP);
 
     caption_max += m_imgui->calc_text_size(std::string_view{": "}).x + 15.f;
 
@@ -15825,19 +15819,19 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::BBLDragFloat("##cursor_radius_input", &m_cursor_radius, 0.05f, 0.0f, 0.0f, "%.2f");
 
         ImGui::Separator();
-        if (m_c->object_clipper()->get_position() == 0.f) {
+        if (m_parent.get_section_view_ratio() == 0.f) {
             ImGui::AlignTextToFramePadding();
             m_imgui->text(m_desc.at("clipping_of_view"));
         }
         else {
             if (m_imgui->button(m_desc.at("reset_direction"))) {
                 wxGetApp().CallAfter([this]() {
-                    m_c->object_clipper()->set_position_by_ratio(-1., false);
+                    m_parent.align_section_view_to_camera();
                     });
             }
         }
 
-        auto clp_dist = float(m_c->object_clipper()->get_position());
+        auto clp_dist = float(m_parent.get_section_view_ratio());
         ImGui::SameLine(circle_max_width);
         ImGui::PushItemWidth(sliders_width);
         bool slider_clp_dist = m_imgui->bbl_slider_float_style("##clp_dist", &clp_dist, 0.f, 1.f, "%.2f", 1.0f, true);
@@ -15845,25 +15839,25 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::PushItemWidth(1.5 * slider_icon_width);
         bool b_clp_dist_input = ImGui::BBLDragFloat("##clp_dist_input", &clp_dist, 0.05f, 0.0f, 0.0f, "%.2f");
 
-        if (slider_clp_dist || b_clp_dist_input) { m_c->object_clipper()->set_position_by_ratio(clp_dist, true); }
+        if (slider_clp_dist || b_clp_dist_input) { m_parent.set_section_view_ratio(clp_dist); }
 
     } else if (m_current_tool == ImGui::TriangleButtonIcon) {
         m_cursor_type = TriangleSelector::CursorType::POINTER;
         m_tool_type   = ToolType::BRUSH;
 
-        if (m_c->object_clipper()->get_position() == 0.f) {
+        if (m_parent.get_section_view_ratio() == 0.f) {
             ImGui::AlignTextToFramePadding();
             m_imgui->text(m_desc.at("clipping_of_view"));
         }
         else {
             if (m_imgui->button(m_desc.at("reset_direction"))) {
                 wxGetApp().CallAfter([this]() {
-                    m_c->object_clipper()->set_position_by_ratio(-1., false);
+                    m_parent.align_section_view_to_camera();
                     });
             }
         }
 
-        auto clp_dist = float(m_c->object_clipper()->get_position());
+        auto clp_dist = float(m_parent.get_section_view_ratio());
         ImGui::SameLine(clipping_slider_left);
         ImGui::PushItemWidth(sliders_width);
         bool slider_clp_dist = m_imgui->bbl_slider_float_style("##clp_dist", &clp_dist, 0.f, 1.f, "%.2f", 1.0f, true);
@@ -15871,7 +15865,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::PushItemWidth(1.5 * slider_icon_width);
         bool b_clp_dist_input = ImGui::BBLDragFloat("##clp_dist_input", &clp_dist, 0.05f, 0.0f, 0.0f, "%.2f");
 
-        if (slider_clp_dist || b_clp_dist_input) { m_c->object_clipper()->set_position_by_ratio(clp_dist, true); }
+        if (slider_clp_dist || b_clp_dist_input) { m_parent.set_section_view_ratio(clp_dist); }
 
     } else if (m_current_tool == ImGui::FillButtonIcon) {
         m_cursor_type = TriangleSelector::CursorType::POINTER;
@@ -15898,19 +15892,19 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
             m_smart_fill_angle = -1.f;
         }
         ImGui::Separator();
-        if (m_c->object_clipper()->get_position() == 0.f) {
+        if (m_parent.get_section_view_ratio() == 0.f) {
             ImGui::AlignTextToFramePadding();
             m_imgui->text(m_desc.at("clipping_of_view"));
         }
         else {
             if (m_imgui->button(m_desc.at("reset_direction"))) {
                 wxGetApp().CallAfter([this]() {
-                    m_c->object_clipper()->set_position_by_ratio(-1., false);
+                    m_parent.align_section_view_to_camera();
                     });
             }
         }
 
-        auto clp_dist = float(m_c->object_clipper()->get_position());
+        auto clp_dist = float(m_parent.get_section_view_ratio());
         ImGui::SameLine(sliders_left_width);
         ImGui::PushItemWidth(sliders_width);
         bool slider_clp_dist = m_imgui->bbl_slider_float_style("##clp_dist", &clp_dist, 0.f, 1.f, "%.2f", 1.0f, true);
@@ -15918,7 +15912,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::PushItemWidth(1.5 * slider_icon_width);
         bool b_clp_dist_input = ImGui::BBLDragFloat("##clp_dist_input", &clp_dist, 0.05f, 0.0f, 0.0f, "%.2f");
 
-        if (slider_clp_dist || b_clp_dist_input) { m_c->object_clipper()->set_position_by_ratio(clp_dist, true);}
+        if (slider_clp_dist || b_clp_dist_input) { m_parent.set_section_view_ratio(clp_dist);}
 
     } else if (m_current_tool == ImGui::HeightRangeIcon) {
         m_tool_type   = ToolType::BRUSH;
@@ -15934,19 +15928,19 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::BBLDragFloat("##cursor_height_input", &m_cursor_height, 0.05f, 0.0f, 0.0f, "%.2f");
 
         ImGui::Separator();
-        if (m_c->object_clipper()->get_position() == 0.f) {
+        if (m_parent.get_section_view_ratio() == 0.f) {
             ImGui::AlignTextToFramePadding();
             m_imgui->text(m_desc.at("clipping_of_view"));
         }
         else {
             if (m_imgui->button(m_desc.at("reset_direction"))) {
                 wxGetApp().CallAfter([this]() {
-                    m_c->object_clipper()->set_position_by_ratio(-1., false);
+                    m_parent.align_section_view_to_camera();
                     });
             }
         }
 
-        auto clp_dist = float(m_c->object_clipper()->get_position());
+        auto clp_dist = float(m_parent.get_section_view_ratio());
         ImGui::SameLine(height_max_width);
         ImGui::PushItemWidth(sliders_width);
         bool slider_clp_dist = m_imgui->bbl_slider_float_style("##clp_dist", &clp_dist, 0.f, 1.f, "%.2f", 1.0f, true);
@@ -15954,7 +15948,7 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
         ImGui::PushItemWidth(1.5 * slider_icon_width);
         bool b_clp_dist_input = ImGui::BBLDragFloat("##clp_dist_input", &clp_dist, 0.05f, 0.0f, 0.0f, "%.2f");
 
-        if (slider_clp_dist || b_clp_dist_input) { m_c->object_clipper()->set_position_by_ratio(clp_dist, true); }
+        if (slider_clp_dist || b_clp_dist_input) { m_parent.set_section_view_ratio(clp_dist); }
     }
     else if (m_current_tool == ImGui::GapFillIcon) {
         m_tool_type = ToolType::GAP_FILL;
@@ -19410,18 +19404,18 @@ void GLGizmoTrueColorPainting::on_render_input_window(float x, float y, float bo
     ImGui::PopItemWidth();
 
     ImGui::Separator();
-    if (m_c->object_clipper()->get_position() == 0.f) {
+    if (m_parent.get_section_view_ratio() == 0.f) {
         m_imgui->text(_L("Section view"));
     } else if (m_imgui->button(_L("Reset direction"))) {
         wxGetApp().CallAfter([this]() {
-            m_c->object_clipper()->set_position_by_ratio(-1., false);
+            m_parent.align_section_view_to_camera();
         });
     }
 
-    float clp_dist = float(m_c->object_clipper()->get_position());
+    float clp_dist = float(m_parent.get_section_view_ratio());
     ImGui::PushItemWidth(slider_width);
     if (m_imgui->bbl_slider_float_style("##true_color_clp_dist", &clp_dist, 0.f, 1.f, "%.2f", 1.f, true))
-        m_c->object_clipper()->set_position_by_ratio(clp_dist, true);
+        m_parent.set_section_view_ratio(clp_dist);
     ImGui::PopItemWidth();
 
     if (ImGui::IsItemHovered())
@@ -20865,17 +20859,17 @@ void GLGizmoImageProjection::on_render_input_window(float x, float y, float bott
 
     if (m_c != nullptr && m_c->object_clipper() != nullptr) {
         ImGui::Separator();
-        if (m_c->object_clipper()->get_position() == 0.f) {
+        if (m_parent.get_section_view_ratio() == 0.f) {
             m_imgui->text(_L("Section view"));
         } else if (m_imgui->button(_L("Reset section view direction"))) {
             wxGetApp().CallAfter([this]() {
                 if (m_c != nullptr && m_c->object_clipper() != nullptr)
-                    m_c->object_clipper()->set_position_by_ratio(-1., false);
+                    m_parent.align_section_view_to_camera();
             });
             show_projection_overlay();
         }
 
-        float clp_dist = float(m_c->object_clipper()->get_position());
+        float clp_dist = float(m_parent.get_section_view_ratio());
         ImGui::PushItemWidth(m_imgui->scaled(8.f));
         const bool section_changed =
             m_imgui->bbl_slider_float_style("##image_projection_clp_dist", &clp_dist, 0.f, 1.f, "%.2f", 1.f, true);
@@ -20884,10 +20878,10 @@ void GLGizmoImageProjection::on_render_input_window(float x, float y, float bott
             m_projection_section_reset_active = true;
         const bool suppress_section_slider = section_reset || m_projection_section_reset_active;
         if (suppress_section_slider) {
-            m_c->object_clipper()->set_position_by_ratio(0., true);
+            m_parent.set_section_view_ratio(0.);
             show_projection_overlay();
         } else if (section_changed) {
-            m_c->object_clipper()->set_position_by_ratio(clp_dist, true);
+            m_parent.set_section_view_ratio(clp_dist);
             show_projection_overlay();
         }
         if (m_projection_section_reset_active && !ImGui::IsMouseDown(ImGuiMouseButton_Left))

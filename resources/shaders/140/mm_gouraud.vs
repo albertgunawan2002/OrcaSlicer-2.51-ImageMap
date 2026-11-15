@@ -37,6 +37,7 @@ struct SlopeDetection
     vec4 override_mask3;
     int current_state;
     int base_state;
+    vec3 up_direction;
 };
 uniform SlopeDetection slope;
 void main()

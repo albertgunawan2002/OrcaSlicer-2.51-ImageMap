@@ -242,25 +242,25 @@ Slic3r::Polylines intersection_pl_2(const Slic3r::Polylines& subject, const Slic
 Slic3r::Polylines  diff_pl_2(const Slic3r::Polylines& subject, const Slic3r::Polygons& clip)
     { return _clipper2_pl_open(Clipper2Lib::ClipType::Difference, subject, clip); }
 
-Clipper2Lib::JoinType clipper2_join_type(ClipperLib::JoinType join_type)
+Clipper2Lib::JoinType clipper2_join_type(Slic3r::JoinType join_type)
 {
     switch (join_type) {
-    case ClipperLib::jtSquare: return Clipper2Lib::JoinType::Square;
-    case ClipperLib::jtRound: return Clipper2Lib::JoinType::Round;
-    case ClipperLib::jtMiter: return Clipper2Lib::JoinType::Miter;
+    case Slic3r::jtSquare: return Clipper2Lib::JoinType::Square;
+    case Slic3r::jtRound: return Clipper2Lib::JoinType::Round;
+    case Slic3r::jtMiter: return Clipper2Lib::JoinType::Miter;
     default: return Clipper2Lib::JoinType::Miter;
     }
 }
 
-void configure_clipper2_offsetter(Clipper2Lib::ClipperOffset& offsetter, ClipperLib::JoinType join_type, double miter_limit)
+void configure_clipper2_offsetter(Clipper2Lib::ClipperOffset& offsetter, Slic3r::JoinType join_type, double miter_limit)
 {
-    if (join_type == ClipperLib::jtRound)
+    if (join_type == Slic3r::jtRound)
         offsetter.ArcTolerance(miter_limit);
     else
         offsetter.MiterLimit(miter_limit);
 }
 
-Clipper2Lib::Paths64 offset_paths_2(const Clipper2Lib::Paths64& paths, double delta, ClipperLib::JoinType join_type, double miter_limit)
+Clipper2Lib::Paths64 offset_paths_2(const Clipper2Lib::Paths64& paths, double delta, Slic3r::JoinType join_type, double miter_limit)
 {
     if (paths.empty() || delta == 0.)
         return paths;
@@ -457,7 +457,7 @@ Slic3r::ExPolygons union_ex_2(const Slic3r::ExPolygons &expolygons, bool filter_
     return boolean_ex_2(Clipper2Lib::ClipType::Union, Slic3rExPolygons_to_Paths64(expolygons, filter_degenerate), {}, ApplySafetyOffset::No);
 }
 
-Slic3r::ExPolygons offset_ex_2(const Clipper2Lib::Paths64 &paths, double delta, ClipperLib::JoinType join_type, double miter_limit)
+Slic3r::ExPolygons offset_ex_2(const Clipper2Lib::Paths64 &paths, double delta, Slic3r::JoinType join_type, double miter_limit)
 {
     if (paths.empty())
         return {};
@@ -471,12 +471,12 @@ Slic3r::ExPolygons offset_ex_2(const Clipper2Lib::Paths64 &paths, double delta, 
     return PolyTree64_to_expolygons(solution);
 }
 
-Slic3r::ExPolygons offset_ex_2(const Slic3r::ExPolygon &expolygon, double delta, ClipperLib::JoinType join_type, double miter_limit)
+Slic3r::ExPolygons offset_ex_2(const Slic3r::ExPolygon &expolygon, double delta, Slic3r::JoinType join_type, double miter_limit)
 {
     return offset_ex_2(Slic3rExPolygon_to_Paths64(expolygon, true), delta, join_type, miter_limit);
 }
 
-Slic3r::ExPolygons offset_ex_2(const Slic3r::ExPolygons &expolygons, double delta, ClipperLib::JoinType join_type, double miter_limit)
+Slic3r::ExPolygons offset_ex_2(const Slic3r::ExPolygons &expolygons, double delta, Slic3r::JoinType join_type, double miter_limit)
 {
     return offset_ex_2(Slic3rExPolygons_to_Paths64(expolygons, true), delta, join_type, miter_limit);
 }
@@ -519,12 +519,12 @@ Slic3r::ExPolygons offset2_ex_2(const Slic3r::ExPolygons& expolygons, double del
     return results;
 }
 
-Slic3r::ExPolygons offset2_ex_2(const Slic3r::ExPolygons& expolygons, double delta1, double delta2, ClipperLib::JoinType join_type, double miter_limit)
+Slic3r::ExPolygons offset2_ex_2(const Slic3r::ExPolygons& expolygons, double delta1, double delta2, Slic3r::JoinType join_type, double miter_limit)
 {
     return offset_ex_2(offset_ex_2(expolygons, delta1, join_type, miter_limit), delta2, join_type, miter_limit);
 }
 
-Slic3r::ExPolygons closing_ex_2(const Slic3r::ExPolygons& expolygons, double delta, ClipperLib::JoinType join_type, double miter_limit)
+Slic3r::ExPolygons closing_ex_2(const Slic3r::ExPolygons& expolygons, double delta, Slic3r::JoinType join_type, double miter_limit)
 {
     return offset2_ex_2(expolygons, delta, -delta, join_type, miter_limit);
 }

@@ -1,10 +1,20 @@
+#include "Flow.hpp"
+#include "Config.hpp"
+#include "ExPolygon.hpp"
+#include "ExtrusionEntity.hpp"
+#include "Exception.hpp"
 #include "Layer.hpp"
 #include "BridgeDetector.hpp"
 #include "ClipperUtils.hpp"
 #include "Color.hpp"
 #include "Geometry.hpp"
+#include "Line.hpp"
 #include "PerimeterGenerator.hpp"
+#include "Point.hpp"
+#include "Polygon.hpp"
+#include "Polyline.hpp"
 #include "Print.hpp"
+#include "PrintConfig.hpp"
 #include "Surface.hpp"
 #include "BoundingBox.hpp"
 #include "SVG.hpp"
@@ -13,17 +23,32 @@
 #include "TextureMappingOffset.hpp"
 #include "MultiMaterialSegmentation.hpp"
 #include "Algorithm/RegionExpansion.hpp"
+#include "libslic3r.h"
+#include "Utils.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
+#include <cstddef>
+#include <initializer_list>
+#include <cstdint>
+#include <optional>
+#include <iterator>
+#include <stdexcept>
+#include <math.h>
+#include <cassert>
 #include <string>
 #include <map>
 #include <optional>
 
 #include <boost/log/trivial.hpp>
 #include <boost/algorithm/clamp.hpp>
+#include <utility>
+#include <vector>
+#include "ExtrusionEntityCollection.hpp"
+#include "MultiMaterialSegmentation.hpp"
+#include "SurfaceCollection.hpp"
 
 namespace Slic3r {
 
@@ -296,8 +321,8 @@ static void perimeter_texture_accumulate_path_image_weights_for_path(const Extru
 
     const double pitch_scaled = std::max(1.0, double(scale_(context.high_resolution_texture_sampling ? 0.08 : 0.16)));
     for (size_t idx = 1; idx < path.polyline.points.size(); ++idx) {
-        const Point &a = path.polyline.points[idx - 1];
-        const Point &b = path.polyline.points[idx];
+        const Point a(to_2d(path.polyline.points[idx - 1]));
+        const Point b(to_2d(path.polyline.points[idx]));
         const double dx = double(b.x()) - double(a.x());
         const double dy = double(b.y()) - double(a.y());
         const double len = std::hypot(dx, dy);
@@ -1852,7 +1877,7 @@ static void perimeter_texture_append_recolor_path_piece(std::vector<PerimeterTex
         unscale<double>(polyline.length()) + unscale<double>(std::max<double>(1.0, double(SCALED_EPSILON))) <
             2.0 * double(source.width))
         extruder_override = -1;
-    ExtrusionPath *path = new ExtrusionPath(std::move(polyline), source);
+    ExtrusionPath *path = new ExtrusionPath(Polyline3(polyline), source);
     path->inset_idx = source.inset_idx;
     pieces.push_back(PerimeterTextureRecolorEntityPiece{ extruder_override, path });
 }
@@ -1957,8 +1982,8 @@ static bool perimeter_texture_split_path_by_recolor_masks(const ExtrusionPath   
     bool saw_override = false;
 
     for (size_t idx = 1; idx < path.polyline.points.size(); ++idx) {
-        const Point &a = path.polyline.points[idx - 1];
-        const Point &b = path.polyline.points[idx];
+        const Point a(to_2d(path.polyline.points[idx - 1]));
+        const Point b(to_2d(path.polyline.points[idx]));
         if (a == b)
             continue;
         saw_segment = true;
@@ -2661,7 +2686,7 @@ static SurfaceCollection perimeter_path_modulated_surfaces(const LayerRegion    
 
 static bool region_uses_overhang_texture_mapping(const Print &print, const PrintRegionConfig &region_config)
 {
-    const int filament_id = region_config.wall_filament.value;
+    const int filament_id = region_config.outer_wall_filament_id.value;
     if (filament_id <= 0)
         return false;
 
@@ -2673,7 +2698,7 @@ static const TextureMappingZone *perimeter_path_modulation_zone_for_region(const
                                                                            const PrintRegionConfig &region_config,
                                                                            unsigned int            &texture_zone_id)
 {
-    const int filament_id = region_config.wall_filament.value;
+    const int filament_id = region_config.outer_wall_filament_id.value;
     if (filament_id <= 0)
         return nullptr;
 
@@ -2787,16 +2812,26 @@ Flow LayerRegion::bridging_flow(FlowRole role, bool thick_bridge) const
     const PrintRegionConfig &region_config  = region.config();
     const PrintObject       &print_object   = *this->layer()->object();
     Flow bridge_flow;
-    auto nozzle_diameter = float(print_object.print()->config().nozzle_diameter.get_at(region.extruder(role) - 1));
+    // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will fall back to zero'th element, so everything is all right.
+    auto nozzle_diameter = float(nozzle_diameter_for_filament(print_object.print()->config(), region.extruder(role), print_object.print()->is_BBL_printer()));
+    const ConfigOptionFloatOrPercent& bridge_width_opt = region_config.bridge_line_width;
+    const double                      bridge_width      = bridge_width_opt.get_abs_value(nozzle_diameter);
+    const bool                        has_bridge_width  = bridge_width > 0.;
+    const double                      bridge_flow_ratio = region_config.bridge_flow;
+
     if (thick_bridge) {
         // The old Slic3r way (different from all other slicers): Use rounded extrusions.
         // Get the configured nozzle_diameter for the extruder associated to the flow role requested.
-        // Here this->extruder(role) - 1 may underflow to MAX_INT, but then the get_at() will follback to zero'th element, so everything is all right.
-        // Applies default bridge spacing.
-        bridge_flow = Flow::bridging_flow(float(sqrt(region_config.bridge_flow)) * nozzle_diameter, nozzle_diameter);
+        float thread_diameter = has_bridge_width ? float(bridge_width) : nozzle_diameter;
+        if (bridge_flow_ratio > 0.)
+            thread_diameter *= float(sqrt(bridge_flow_ratio));
+        bridge_flow = Flow::bridging_flow(thread_diameter, nozzle_diameter);
     } else {
         // The same way as other slicers: Use normal extrusions. Apply bridge_flow while maintaining the original spacing.
-        bridge_flow = this->flow(role).with_flow_ratio(region_config.bridge_flow);
+        Flow base_flow = this->flow(role);
+        if (has_bridge_width)
+            base_flow = Flow(float(bridge_width), base_flow.height(), nozzle_diameter);
+        bridge_flow = base_flow.with_flow_ratio(bridge_flow_ratio);
     }
     return bridge_flow;
 
@@ -2815,10 +2850,11 @@ void LayerRegion::slices_to_fill_surfaces_clipped()
         by_surface[size_t(surface.surface_type)].emplace_back(&surface);
     // Trim surfaces by the fill_boundaries.
     this->fill_surfaces.surfaces.clear();
+    const Polygons fill_boundaries = to_polygons(this->fill_expolygons);
     for (size_t surface_type = 0; surface_type < size_t(stCount); ++ surface_type) {
         const SurfacesPtr &this_surfaces = by_surface[surface_type];
         if (! this_surfaces.empty())
-            this->fill_surfaces.append(intersection_ex(this_surfaces, this->fill_expolygons), SurfaceType(surface_type));
+            this->fill_surfaces.append(intersection_ex_by_piece(to_expolygons(this_surfaces), fill_boundaries), SurfaceType(surface_type));
     }
 }
 
@@ -2835,6 +2871,12 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
         //FIXME account for raft layers.
         (this->layer()->id() >= size_t(region_config.bottom_shell_layers.value) &&
          this->layer()->print_z >= region_config.bottom_shell_thickness - EPSILON);
+
+    double model_rotation_rad = 0.0;
+    if (region_config.align_infill_direction_to_model) {
+        auto m = this->layer()->object()->trafo().matrix();
+        model_rotation_rad = std::atan2((double)m(1, 0), (double)m(0, 0));
+    }
 
     const float texture_external_width_mm =
         std::max(0.05f, float(print_config.texture_mapping_outer_wall_gradient_max_line_width.value));
@@ -2950,6 +2992,7 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
             &this->layer()->object()->config(),
             &print_config,
             spiral_mode,
+            model_rotation_rad,
 
             // output:
             &this->perimeters,
@@ -2959,9 +3002,12 @@ void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRe
             fill_no_overlap
         );
 
-        if (this->layer()->lower_layer != nullptr)
-            // Cummulative sum of polygons over all the regions.
-            g.lower_slices = &this->layer()->lower_layer->lslices;
+        // Cumulative sum of polygons over all the regions, less what the lower layer could not print.
+        ExPolygons lower_slices;
+        if (this->layer()->lower_layer != nullptr) {
+            lower_slices   = g.printable_slices(this->layer()->lower_layer->lslices);
+            g.lower_slices = &lower_slices;
+        }
         if (this->layer()->upper_layer != NULL)
             g.upper_slices = &this->layer()->upper_layer->lslices;
 
@@ -3124,7 +3170,6 @@ std::vector<Bridge> get_grouped_bridges(
     {
         result.reserve(bridge_expansions.size());
         uint32_t group_id = 0;
-        using std::move_iterator;
         for (ExPolygon& expolygon : bridge_expolygons)
             result.push_back({ std::move(expolygon), group_id ++, bridge_expansions.end() });
     }
@@ -3187,7 +3232,8 @@ std::vector<Bridge> get_grouped_bridges(
 void detect_bridge_directions(
     const Algorithm::WaveSeeds& bridge_anchors,
     std::vector<Bridge>& bridges,
-    const std::vector<ExpansionZone>& expansion_zones
+    const std::vector<ExpansionZone>& expansion_zones,
+    const Polygons& other_regions_anchors
 ) {
     if (expansion_zones.empty()) {
         throw std::runtime_error("At least one expansion zone must exist!");
@@ -3195,7 +3241,8 @@ void detect_bridge_directions(
     auto it_bridge_anchor = bridge_anchors.begin();
     for (uint32_t bridge_id = 0; bridge_id < uint32_t(bridges.size()); ++ bridge_id) {
         Bridge &bridge = bridges[bridge_id];
-        Polygons anchor_areas;
+        Polygons anchor_areas = ClipperUtils::clip_clipper_polygons_with_subject_bbox(
+            other_regions_anchors, get_extents(bridge.expolygon).inflated(SCALED_EPSILON * 2));
         int32_t last_anchor_id = -1;
         for (; it_bridge_anchor != bridge_anchors.end() && it_bridge_anchor->src == bridge_id; ++ it_bridge_anchor) {
             if (last_anchor_id != int(it_bridge_anchor->boundary)) {
@@ -3323,10 +3370,10 @@ ExpansionResult expand_expolygons(
 Surfaces expand_bridges_detect_orientations(
     Surfaces &surfaces,
     std::vector<ExpansionZone>& expansion_zones,
-    const float closing_radius
+    const float closing_radius,
+    const Polygons& other_regions_anchors
 )
 {
-    using namespace Slic3r::Algorithm;
 
     double thickness;
     ExPolygons bridge_expolygons = fill_surfaces_extract_expolygons(surfaces, {stBottomBridge}, thickness);
@@ -3346,7 +3393,7 @@ Surfaces expand_bridges_detect_orientations(
     bridge_expolygons.clear();
 
     std::sort(expansion_result.anchors.begin(), expansion_result.anchors.end(), Algorithm::lower_by_src_and_boundary);
-    detect_bridge_directions(expansion_result.anchors, bridges, expansion_zones);
+    detect_bridge_directions(expansion_result.anchors, bridges, expansion_zones, other_regions_anchors);
 
     // Merge the groups with the same group id, produce surfaces by merging source overhangs with their newly expanded anchors.
     std::sort(expansion_result.expansions.begin(), expansion_result.expansions.end(), [](auto &l, auto &r) {
@@ -3459,10 +3506,34 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
     SurfaceCollection bridges;
     {
         BOOST_LOG_TRIVIAL(trace) << "Processing external surface, detecting bridges. layer" << this->layer()->print_z;
-        const double custom_angle = this->region().config().bridge_angle.value;
-        bridges.surfaces = custom_angle > 0 ?
-            expand_merge_surfaces(this->fill_surfaces.surfaces, stBottomBridge, expansion_zones, closing_radius, Geometry::deg2rad(custom_angle)) :
-            expand_bridges_detect_orientations(this->fill_surfaces.surfaces, expansion_zones, closing_radius);
+        // ORCA: Relative/Align Bridge Angle
+        const auto  &region_config    = this->region().config();
+        const double custom_angle_deg = region_config.bridge_angle.value;
+        const bool   relative_angle   = region_config.relative_bridge_angle.value;
+        const double custom_angle_rad = Geometry::deg2rad(custom_angle_deg);
+
+        double align_offset_rad = 0.0;
+        if (region_config.align_infill_direction_to_model) {
+            auto m = this->layer()->object()->trafo().matrix();
+            align_offset_rad = std::atan2((double)m(1, 0), (double)m(0, 0));
+        }
+
+        // Orca: The supported parts of the other regions anchor a bridge as well, as one segmented into a region of its own.
+        Polygons other_regions_anchors;
+        if (lower_layer != nullptr && this->fill_surfaces.has(stBottomBridge))
+            for (const LayerRegion *other : this->layer()->regions())
+                if (other != this)
+                    polygons_append(other_regions_anchors, intersection(other->slices.surfaces, lower_layer->lslices));
+
+        bridges.surfaces = (custom_angle_deg > 0.0 && !relative_angle) ?
+            expand_merge_surfaces(this->fill_surfaces.surfaces, stBottomBridge, expansion_zones, closing_radius, custom_angle_rad + align_offset_rad) :
+            expand_bridges_detect_orientations(this->fill_surfaces.surfaces, expansion_zones, closing_radius, other_regions_anchors);
+        if (custom_angle_deg > 0.0 && relative_angle) {
+            for (Surface &bridge_surface : bridges.surfaces) {
+                if (bridge_surface.bridge_angle >= 0)
+                    bridge_surface.bridge_angle += custom_angle_rad;
+            }
+        }
         BOOST_LOG_TRIVIAL(trace) << "Processing external surface, detecting bridges - done";
 #ifdef SLIC3R_DEBUG_SLICE_PROCESSING
         {
@@ -3531,9 +3602,9 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
 }
 #else
 
-//#define EXTERNAL_SURFACES_OFFSET_PARAMETERS ClipperLib::jtMiter, 3.
-//#define EXTERNAL_SURFACES_OFFSET_PARAMETERS ClipperLib::jtMiter, 1.5
-#define EXTERNAL_SURFACES_OFFSET_PARAMETERS ClipperLib::jtSquare, 0.
+//#define EXTERNAL_SURFACES_OFFSET_PARAMETERS jtMiter, 3.
+//#define EXTERNAL_SURFACES_OFFSET_PARAMETERS jtMiter, 1.5
+#define EXTERNAL_SURFACES_OFFSET_PARAMETERS jtSquare, 0.
 
 void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Polygons *lower_layer_covered)
 {
@@ -3724,12 +3795,25 @@ void LayerRegion::process_external_surfaces(const Layer *lower_layer, const Poly
                 // would get merged into a single one while they need different directions
                 // also, supply the original expolygon instead of the grown one, because in case
                 // of very thin (but still working) anchors, the grown expolygon would go beyond them
-                double custom_angle = Geometry::deg2rad(this->region().config().bridge_angle.value);
-                if (custom_angle > 0.0) {
-                    bridges[idx_last].bridge_angle = custom_angle;
+                // ORCA: Relative/Align Bridge Angle
+                const auto &region_config   = this->region().config();
+                const double custom_angle_deg = region_config.bridge_angle.value;
+                const bool   relative_angle   = region_config.relative_bridge_angle.value;
+                const double custom_angle_rad = Geometry::deg2rad(custom_angle_deg);
+
+                double align_offset_rad = 0.0;
+                if (region_config.align_infill_direction_to_model) {
+                    auto m = this->layer()->object()->trafo().matrix();
+                    align_offset_rad = std::atan2((double)m(1, 0), (double)m(0, 0));
+                }
+
+                if (custom_angle_deg > 0.0 && !relative_angle) {
+                    bridges[idx_last].bridge_angle = custom_angle_rad + align_offset_rad;
                 } else {
                     auto [bridging_dir, unsupported_dist] = detect_bridging_direction(to_polygons(initial), to_polygons(lower_layer->lslices));
                     bridges[idx_last].bridge_angle = PI + std::atan2(bridging_dir.y(), bridging_dir.x());
+                    if (custom_angle_deg > 0.0 && relative_angle)
+                        bridges[idx_last].bridge_angle += custom_angle_rad;
                 }
 
                 /*
@@ -3965,17 +4049,14 @@ void LayerRegion::simplify_entity_collection(ExtrusionEntityCollection* entity_c
 
 void LayerRegion::simplify_path(ExtrusionPath* path)
 {
-    const auto print_config = this->layer()->object()->print()->config();
-    const bool spiral_mode = print_config.spiral_mode;
-    const bool enable_arc_fitting = print_config.enable_arc_fitting;
+    const auto &print_config = this->layer()->object()->print()->config();
+    const ArcFittingMode arc_fitting = print_config.enable_arc_fitting.value;
+    const bool is_sparse_infill = path->role() == erInternalInfill;
     const auto scaled_resolution = scaled<double>(print_config.resolution.value);
 
-    if (enable_arc_fitting &&
-        !spiral_mode) {
-        if (path->role() == erInternalInfill)
-            path->simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
-        else
-            path->simplify_by_fitting_arc(scaled_resolution);
+    if (!print_config.spiral_mode &&
+        (arc_fitting == ArcFittingMode::Enabled || (arc_fitting == ArcFittingMode::SparseInfill && is_sparse_infill))) {
+        path->simplify_by_fitting_arc(is_sparse_infill ? SCALED_SPARSE_INFILL_RESOLUTION : scaled_resolution);
     } else {
         path->simplify(scaled_resolution);
     }
@@ -3983,42 +4064,14 @@ void LayerRegion::simplify_path(ExtrusionPath* path)
 
 void LayerRegion::simplify_multi_path(ExtrusionMultiPath* multipath)
 {
-    const auto print_config = this->layer()->object()->print()->config();
-    const bool spiral_mode = print_config.spiral_mode;
-    const bool enable_arc_fitting = print_config.enable_arc_fitting;
-    const auto scaled_resolution = scaled<double>(print_config.resolution.value);
-
-    for (size_t i = 0; i < multipath->paths.size(); ++i) {
-        if (enable_arc_fitting &&
-            !spiral_mode) {
-            if (multipath->paths[i].role() == erInternalInfill)
-                multipath->paths[i].simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
-            else
-                multipath->paths[i].simplify_by_fitting_arc(scaled_resolution);
-        } else {
-            multipath->paths[i].simplify(scaled_resolution);
-        }
-    }
+    for (ExtrusionPath &path : multipath->paths)
+        this->simplify_path(&path);
 }
 
 void LayerRegion::simplify_loop(ExtrusionLoop* loop)
 {
-    const auto print_config = this->layer()->object()->print()->config();
-    const bool spiral_mode = print_config.spiral_mode;
-    const bool enable_arc_fitting = print_config.enable_arc_fitting;
-    const auto scaled_resolution = scaled<double>(print_config.resolution.value);
-
-    for (size_t i = 0; i < loop->paths.size(); ++i) {
-        if (enable_arc_fitting &&
-            !spiral_mode) {
-            if (loop->paths[i].role() == erInternalInfill)
-                loop->paths[i].simplify_by_fitting_arc(SCALED_SPARSE_INFILL_RESOLUTION);
-            else
-                loop->paths[i].simplify_by_fitting_arc(scaled_resolution);
-        } else {
-            loop->paths[i].simplify(scaled_resolution);
-        }
-    }
+    for (ExtrusionPath &path : loop->paths)
+        this->simplify_path(&path);
 }
 
 }

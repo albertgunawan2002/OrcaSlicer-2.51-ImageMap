@@ -1,9 +1,9 @@
 /*******************************************************************************
 * Author    :  Angus Johnson                                                   *
-* Date      :  21 February 2026                                                *
+* Date      :  13 December 2025                                                *
 * Release   :  BETA RELEASE                                                    *
 * Website   :  https://www.angusj.com                                          *
-* Copyright :  Angus Johnson 2010-2026                                         *
+* Copyright :  Angus Johnson 2010-2025                                         *
 * Purpose   :  Constrained Delaunay Triangulation                              *
 * License   :  https://www.boost.org/LICENSE_1_0.txt                           *
 *******************************************************************************/
@@ -199,7 +199,7 @@ namespace Clipper2Lib {
   static void RemoveEdgeFromVertex(Vertex2* vert, Edge* edge)
   {
     auto it = std::find(vert->edges.begin(), vert->edges.end(), edge);
-    if (it == vert->edges.end()) DoError(undefined_error_i);
+    if (it == vert->edges.end()) throw "oops!";
     vert->edges.erase(it);
   }
 
@@ -207,7 +207,7 @@ namespace Clipper2Lib {
   {
     if (len < 3) return false;
     size_t i0 = idx, n = (idx + 1) % len;
-    while (path[n].y <= path[idx].y)
+    while (path[n].y <= path[idx].y) 
     {
       idx = n; n = (n + 1) % len;
       if (idx == i0) return false; // fails if the path is completely horizontal
@@ -245,20 +245,20 @@ namespace Clipper2Lib {
   }
 
   static Path64 PathFromTriangle(Triangle tri)
-  {
+  { 
     Path64 res;
     res.reserve(3);
     res.push_back(tri.edges[0]->vL->pt);
     res.push_back(tri.edges[0]->vR->pt);
     const Edge& e = *tri.edges[1];
-    if (e.vL->pt == res[0] || e.vL->pt == res[1])
+    if (e.vL->pt == res[0] || e.vL->pt == res[1]) 
       res.push_back(e.vR->pt);
     else
       res.push_back(e.vL->pt);
     return res;
   }
 
-  static double InCircleTest(const Point64& ptA, const Point64& ptB,
+  static double InCircleTest(const Point64& ptA, const Point64& ptB, 
     const Point64& ptC, const Point64& ptD)
   {
     // Return the determinant value of 3 x 3 matrix ...
@@ -303,12 +303,9 @@ namespace Clipper2Lib {
        return Sqr(ax * dy - dx * ay) / (dx * dx + dy * dy);
   }
 
-  static IntersectKind SegsIntersect(const Point64 s1a, const Point64 s1b,
+  static IntersectKind SegsIntersect(const Point64 s1a, const Point64 s1b, 
     const Point64 s2a, const Point64 s2b)
   {
-    //ignore segments sharing an end-point
-    if (s1a == s2a || s1b == s2a || s1b == s2b) return IntersectKind::none;
-
     double dy1 = static_cast<double>(s1b.y - s1a.y);
     double dx1 = static_cast<double>(s1b.x - s1a.x);
     double dy2 = static_cast<double>(s2b.y - s2a.y);
@@ -316,11 +313,11 @@ namespace Clipper2Lib {
     double cp = dy1 * dx2 - dy2 * dx1;
     if (cp == 0) return IntersectKind::collinear;
 
-    double t = (static_cast<double>(s1a.x - s2a.x) * dy2 -
+    double t = (static_cast<double>(s1a.x - s2a.x) * dy2 - 
       static_cast<double>(s1a.y - s2a.y) * dx2);
-
-    // nb: testing for t == 0 is unreliable due to float imprecision
-    if (t >= 0)
+    //ignore segments that 'intersect' at an end-point
+    if (t == 0) return IntersectKind::none;
+    if (t > 0)
     {
       if (cp < 0 || t >= cp) return IntersectKind::none;
     }
@@ -332,17 +329,18 @@ namespace Clipper2Lib {
     // so far, the *segment* 's1' intersects the *line* through 's2',
     // but now make sure it also intersects the *segment* 's2'
     t = ((s1a.x - s2a.x) * dy1 - (s1a.y - s2a.y) * dx1);
-    if (t >= 0)
+    if (t == 0) return IntersectKind::none;
+    if (t > 0)
     {
       if (cp > 0 && t < cp) return IntersectKind::intersect;
     }
     else
-    {
+    { 
       if (cp < 0 && t > cp) return IntersectKind::intersect;
     }
     return IntersectKind::none;
   }
-
+  
   /////////////////////////////////////////////////////////////////////////////
   // Delaunay class definitions
   /////////////////////////////////////////////////////////////////////////////
@@ -376,7 +374,7 @@ namespace Clipper2Lib {
     // Excluding 'edge', edgesA will contain two edges (one from
     // triangleA and one from triangleB) that touch edge.vL.
     // And edgesB will contain the two edges that touch edge.vR.
-
+    
     Edge* edgesA[3] = { nullptr, nullptr, nullptr };
     Edge* edgesB[3] = { nullptr, nullptr, nullptr };
     for (int i = 0; i < 3; ++i)
@@ -439,7 +437,7 @@ namespace Clipper2Lib {
     for (int i = 1; i < 3; ++i)
     {
       edge->triA->edges[i] = edgesA[i];
-      if (!edgesA[i]) DoError(undefined_error_i);
+      if (!edgesA[i]) throw "oops"; // stops compiler warnings 
       if (IsLooseEdge(*edgesA[i]))
         pendingDelaunayStack.push(edgesA[i]);
       // since each edge has its own triangleA and triangleB, we have to be careful
@@ -450,14 +448,14 @@ namespace Clipper2Lib {
         edgesA[i]->triA = edge->triA;
       else if (edgesA[i]->triB == edge->triB)
         edgesA[i]->triB = edge->triA;
-      else DoError(undefined_error_i);
+      else throw "oops";
     }
 
     edge->triB->edges[0] = edge;
     for (int i = 1; i < 3; ++i)
     {
       edge->triB->edges[i] = edgesB[i];
-      if (!edgesB[i]) DoError(undefined_error_i);
+      if (!edgesB[i]) throw "oops"; // stops compiler warnings 
       if (IsLooseEdge(*edgesB[i]))
         pendingDelaunayStack.push(edgesB[i]);
       // since each edge has its own triangleA and triangleB, we have to be careful
@@ -468,7 +466,7 @@ namespace Clipper2Lib {
         edgesB[i]->triA = edge->triB;
       else if (edgesB[i]->triB == edge->triA)
         edgesB[i]->triB = edge->triB;
-      else DoError(undefined_error_i);
+      else throw "oops";
     }
 
   }
@@ -513,7 +511,7 @@ namespace Clipper2Lib {
   {
     Triangle* res = allTriangles.emplace_back(new Triangle(e1, e2, e3));
     // nb: only expire loose edges when both sides of these edges have triangles.
-    for (int i = 0; i < 3; ++i)
+    for (int i = 0; i < 3; ++i)       
       if (res->edges[i]->triA)
       {
         res->edges[i]->triB = res;
@@ -525,7 +523,7 @@ namespace Clipper2Lib {
         res->edges[i]->triA = res;
         // this is the edge's first triangle, so only remove
         // this edge from actives if it's a fixed edge.
-        if (!IsLooseEdge(*res->edges[i]))
+        if (!IsLooseEdge(*res->edges[i])) 
           RemoveEdgeFromActives(res->edges[i]);
       }
     return res;
@@ -552,7 +550,7 @@ namespace Clipper2Lib {
     Vertex2* v2 = tmpE->vT;
     RemoveEdgeFromVertex(v2, tmpE);
     // replace v2 in tmpE with v
-    if (tmpE->vL == v2) tmpE->vL = v;
+    if (tmpE->vL == v2) tmpE->vL = v; 
     else tmpE->vR = v;
     tmpE->vT = v;
     v->edges.push_back(tmpE);
@@ -576,7 +574,7 @@ namespace Clipper2Lib {
       for (size_t i2 = i1 + 1; i2 < allEdges.size(); ++i2)
       {
         Edge* e2 = allEdges[i2];
-        if (e2->vL->pt.x >= e1->vR->pt.x)
+        if (e2->vL->pt.x >= e1->vR->pt.x) 
           break; // all 'e' from now on are too far right
 
         // 'e2' is inside e1's horizontal region. If 'e2' is also inside
@@ -585,7 +583,7 @@ namespace Clipper2Lib {
           (SegsIntersect(e2->vL->pt, e2->vR->pt,
             e1->vL->pt, e1->vR->pt) == IntersectKind::intersect))
         {
-          if (!RemoveIntersection(e2, e1))
+          if (!RemoveIntersection(e2, e1)) 
             return false; // oops!!
         }
         // nb: collinear edges are managed in MergeDupOrCollinearVertices below
@@ -612,7 +610,7 @@ namespace Clipper2Lib {
   void Delaunay::MergeDupOrCollinearVertices()
   {
     // note: this procedure may add new edges and change the
-    // number of edges connected with a given vertex, but it
+    // number of edges connected with a given vertex, but it 
     // won't add or delete vertices (so it's safe to use iterators)
     auto vIter1 = allVertices.begin();
     for (auto vIter2 = allVertices.begin() + 1; vIter2 != allVertices.end(); ++vIter2)
@@ -672,8 +670,8 @@ namespace Clipper2Lib {
     // find the closest 'active' edge with a vertex that's not above vAbove
     Edge* e = firstActive, *eBelow = nullptr;
     double bestD = -1.0;
-    while (e)
-    {
+    while (e) 
+    { 
       if (e->vL->pt.x <= xAbove && e->vR->pt.x >= xAbove &&
         e->vB->pt.y >= yAbove && e->vB != vAbove && e->vT != vAbove &&
         !LeftTurning(e->vL->pt, vAbove->pt, e->vR->pt))
@@ -740,7 +738,7 @@ namespace Clipper2Lib {
     {
       l = v2->pt.x;
       r = v1->pt.x;
-    }
+    } 
     else
     {
       l = v1->pt.x;
@@ -787,7 +785,7 @@ namespace Clipper2Lib {
     }
 
     if (!vAlt || vAlt->pt.y < minY) return;
-
+    
     // Don't triangulate **across** fixed edges
     if (vAlt->pt.y < pivot->pt.y)
     {
@@ -909,7 +907,7 @@ namespace Clipper2Lib {
       return Paths64(); // oops!
     }
 
-    // if necessary fix path orientation because the algorithm
+    // if necessary fix path orientation because the algorithm 
     // expects clockwise outer paths and counter-clockwise inner paths
     if (lowermostVertex->innerLM)
     {
@@ -938,7 +936,7 @@ namespace Clipper2Lib {
 
     std::sort(allEdges.begin(), allEdges.end(), EdgeListSort);
     if (!FixupEdgeIntersects())
-    {
+    { 
       CleanUp();
       triResult = TriangulateResult::paths_intersect;
       return Paths64(); // oops!
@@ -946,7 +944,7 @@ namespace Clipper2Lib {
 
     std::sort(allVertices.begin(), allVertices.end(), VertexListSort);
     MergeDupOrCollinearVertices();
-
+    
     int64_t currY = allVertices[0]->pt.y;
     for (auto vIt = allVertices.begin(); vIt != allVertices.end(); ++vIt)
     {
@@ -1004,8 +1002,8 @@ namespace Clipper2Lib {
 
       for (int i = static_cast<int>(v->edges.size()) - 1; i >= 0; --i)
       {
-        // the following line may look superfluous, but within this loop
-        // v->edges may be altered with additions and or deletions.
+        // the following line may look superfluous, but within this loop  
+        // v->edges may be altered with additions and or deletions. 
         // So this line *is* necessary (and why we can't use an iterator).
         // Also, we need to use a *descending* index which is safe because
         // any additions will be loose edges which are ignored here.
@@ -1032,7 +1030,7 @@ namespace Clipper2Lib {
             DoTriangulateRight(e, e->vB, v->pt.y);
         }
       } // for v->edges loop
-
+      
       if (v->innerLM) locMinStack.push(v);
 
     } // for allVertices loop
@@ -1042,7 +1040,7 @@ namespace Clipper2Lib {
     {
       Edge* e = horzEdgeStack.top();
       horzEdgeStack.pop();
-      if (!EdgeCompleted(e) && e->vB == e->vL)
+      if (!EdgeCompleted(e) && e->vB == e->vL) 
         DoTriangulateLeft(e, e->vB, currY);
     }
 
@@ -1118,7 +1116,7 @@ namespace Clipper2Lib {
       if (!lowermostVertex ||
         vPrev->pt.y > lowermostVertex->pt.y ||
         (vPrev->pt.y == lowermostVertex->pt.y &&
-        vPrev->pt.x < lowermostVertex->pt.x))
+        vPrev->pt.x < lowermostVertex->pt.x)) 
           lowermostVertex = vPrev;
 
       iNext = Next(i, len);
@@ -1207,7 +1205,7 @@ namespace Clipper2Lib {
 
   TriangulateResult Triangulate(const PathsD& pp, int decPlaces, PathsD& solution, bool useDelaunay)
   {
-    int ec = 0;
+    int ec;
     double scale;
     TriangulateResult result;
     if (decPlaces <= 0) scale = 1;

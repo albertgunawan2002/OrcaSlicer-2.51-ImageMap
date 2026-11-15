@@ -4,7 +4,7 @@
 #include "ExPolygon.hpp"
 #include "Polygon.hpp"
 #include "Polyline.hpp"
-#include "clipper.hpp"
+#include "ClipperUtils.hpp"
 #include "clipper2/clipper.h"
 
 namespace Slic3r {
@@ -26,9 +26,9 @@ Slic3r::Polylines  Paths64_to_polylines(const Clipper2Lib::Paths64& in);
 Slic3r::Polygons   Paths64_to_polygons(const Clipper2Lib::Paths64& in);
 Slic3r::ExPolygons PolyTree64_to_expolygons(const Clipper2Lib::PolyTree64& in);
 Slic3r::ExPolygons PolyTree64_to_expolygons(Clipper2Lib::PolyTree64&& in);
-Clipper2Lib::JoinType clipper2_join_type(ClipperLib::JoinType join_type);
-void                  configure_clipper2_offsetter(Clipper2Lib::ClipperOffset& offsetter, ClipperLib::JoinType join_type, double miter_limit);
-Clipper2Lib::Paths64  offset_paths_2(const Clipper2Lib::Paths64& paths, double delta, ClipperLib::JoinType join_type, double miter_limit);
+Clipper2Lib::JoinType clipper2_join_type(Slic3r::JoinType join_type);
+void                  configure_clipper2_offsetter(Clipper2Lib::ClipperOffset& offsetter, Slic3r::JoinType join_type, double miter_limit);
+Clipper2Lib::Paths64  offset_paths_2(const Clipper2Lib::Paths64& paths, double delta, Slic3r::JoinType join_type, double miter_limit);
 Slic3r::ExPolygons    boolean_ex_2(Clipper2Lib::ClipType clip_type, const Clipper2Lib::Paths64& subject, Clipper2Lib::Paths64 clip, ApplySafetyOffset do_safety_offset = ApplySafetyOffset{});
 Slic3r::Polylines  intersection_pl_2(const Slic3r::Polylines& subject, const Slic3r::Polygons& clip);
 Slic3r::Polylines  diff_pl_2(const Slic3r::Polylines& subject, const Slic3r::Polygons& clip);
@@ -72,13 +72,13 @@ Slic3r::ExPolygons         union_ex_2(const Slic3r::Polygons &expolygons);
 Slic3r::ExPolygons         union_ex_2(const Slic3r::Polygons &expolygons, bool filter_degenerate);
 Slic3r::ExPolygons         union_ex_2(const Slic3r::ExPolygons &expolygons);
 Slic3r::ExPolygons         union_ex_2(const Slic3r::ExPolygons &expolygons, bool filter_degenerate);
-Slic3r::ExPolygons         offset_ex_2(const Clipper2Lib::Paths64 &paths, double delta, ClipperLib::JoinType join_type, double miter_limit);
-Slic3r::ExPolygons         offset_ex_2(const Slic3r::ExPolygon &expolygon, double delta, ClipperLib::JoinType join_type, double miter_limit);
+Slic3r::ExPolygons         offset_ex_2(const Clipper2Lib::Paths64 &paths, double delta, Slic3r::JoinType join_type, double miter_limit);
+Slic3r::ExPolygons         offset_ex_2(const Slic3r::ExPolygon &expolygon, double delta, Slic3r::JoinType join_type, double miter_limit);
 Slic3r::ExPolygons         offset_ex_2(const Slic3r::ExPolygons &expolygons, double delta);
-Slic3r::ExPolygons         offset_ex_2(const Slic3r::ExPolygons &expolygons, double delta, ClipperLib::JoinType join_type, double miter_limit);
+Slic3r::ExPolygons         offset_ex_2(const Slic3r::ExPolygons &expolygons, double delta, Slic3r::JoinType join_type, double miter_limit);
 Slic3r::ExPolygons         offset2_ex_2(const Slic3r::ExPolygons &expolygons, double delta1, double delta2);
-Slic3r::ExPolygons         offset2_ex_2(const Slic3r::ExPolygons &expolygons, double delta1, double delta2, ClipperLib::JoinType join_type, double miter_limit);
-Slic3r::ExPolygons         closing_ex_2(const Slic3r::ExPolygons &expolygons, double delta, ClipperLib::JoinType join_type, double miter_limit);
+Slic3r::ExPolygons         offset2_ex_2(const Slic3r::ExPolygons &expolygons, double delta1, double delta2, Slic3r::JoinType join_type, double miter_limit);
+Slic3r::ExPolygons         closing_ex_2(const Slic3r::ExPolygons &expolygons, double delta, Slic3r::JoinType join_type, double miter_limit);
 Slic3r::Polygons           union_pt_chained_outside_in_2(const Slic3r::Polygons &subject);
 }
 

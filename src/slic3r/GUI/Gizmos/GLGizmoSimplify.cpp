@@ -1,6 +1,7 @@
 #include "GLGizmoSimplify.hpp"
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
+#include "slic3r/GUI/ImGuiWrapper.hpp"
 #include "slic3r/GUI/GUI_ObjectList.hpp"
 #include "slic3r/GUI/MsgDialog.hpp"
 #include "slic3r/GUI/NotificationManager.hpp"
@@ -11,12 +12,35 @@
 #include "libslic3r/Model.hpp"
 #include "libslic3r/QuadricEdgeCollapse.hpp"
 
+#include <functional>
+#include <cstddef>
+#include <cstdint>
+#include <algorithm>
+#include <cassert>
+#include <cmath>
 #include <glad/gl.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include "slic3r/GUI/Gizmos/GLGizmosManager.hpp"
+#include "slic3r/GUI/Selection.hpp"
+#include "slic3r/GUI/3DScene.hpp"
+#include <string>
+#include "slic3r/GUI/Gizmos/GLGizmoBase.hpp"
+#include <iterator>
+#include <mutex>
+#include <imgui.h>
+#include <memory>
+#include <limits>
+#include <optional>
+#include "libslic3r/Point.hpp"
+#include "libslic3r/Color.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmosCommon.hpp"
 #include <thread>
+#include <vector>
+#include <wx/event.h>
+#include <utility>
 
 namespace Slic3r::GUI {
 
@@ -340,7 +364,7 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
 
     ImGui::NewLine();
     ImGui::SameLine(bottom_left_width + space_size);
-    ImGui::Text(_u8L("%d triangles").c_str(), m_configuration.wanted_count);
+    ImGui::TextUnformatted(GUI::format(_L_PLURAL("%1% triangle", "%1% triangles", m_configuration.wanted_count), m_configuration.wanted_count).c_str());
     m_imgui->disabled_end(); // use_count
 
     m_imgui->bbl_checkbox(_L("Show wireframe").c_str(), m_show_wireframe);
@@ -381,7 +405,7 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
         ImGui::BBLProgressBar2(displayed_progress / 100.f, progress_size);
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(ImVec4(0.42f, 0.42f, 0.42f, 1.00f), progress_text.c_str());
+        ImGui::TextColored(ImVec4(0.42f, 0.42f, 0.42f, 1.00f), "%s", progress_text.c_str());
         ImGui::SameLine(bottom_left_width + slider_width +  m_imgui->scaled(1.0f));
     } else {
         ImGui::Dummy(ImVec2(bottom_left_width - space_size, -1));
@@ -400,7 +424,7 @@ void GLGizmoSimplify::on_render_input_window(float x, float y, float bottom_limi
         apply_simplify();
     }
     else if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && is_worker_running) {
-        ImGui::SetTooltip("%s", _u8L("Can't apply when processing preview.").c_str());
+        ImGui::SetTooltip("%s", _u8L("Unable to apply when processing preview").c_str());
     }
     m_imgui->pop_confirm_button_style();
     m_imgui->disabled_end(); // state !settings
@@ -630,15 +654,23 @@ void GLGizmoSimplify::apply_simplify() {
 
     auto plater = wxGetApp().plater();
     plater->take_snapshot(GUI::format("Simplify %1%", m_volume->name));
-    plater->clear_before_change_mesh(object_idx);
+    const bool keep_painting = GUI::wxGetApp().app_config->get_bool("keep_painting");
+    if (!keep_painting) {
+        plater->clear_before_change_mesh(object_idx);
+    }
 
     ModelVolume* mv = get_model_volume(selection, wxGetApp().model());
     assert(mv == m_volume);
 
     const bool remap_failed = m_state.result->texture_data.remap_failed;
     const bool used_fallback_rgba = m_state.result->texture_data.used_fallback_rgba;
+    // Save paint
+    std::optional<TriangleSelector::SavedPainting> saved_painting = keep_painting ? mv->save_painting() :
+                                                                                    std::optional<TriangleSelector::SavedPainting>{};
     mv->set_mesh(std::move(*m_state.result->mesh));
     apply_simplify_texture_data_result(*mv, std::move(m_state.result->texture_data));
+    // Remap paint
+    mv->restore_painting(saved_painting);
     m_state.result.reset();
     mv->calculate_convex_hull();
     mv->invalidate_convex_hull_2d();
