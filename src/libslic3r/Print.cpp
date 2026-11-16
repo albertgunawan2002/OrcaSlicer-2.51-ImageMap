@@ -949,7 +949,7 @@ std::vector<unsigned int> Print::object_extruders() const
 
     for (const PrintObject* object : m_objects) {
         const ModelObject* mo = object->model_object();
-        const size_t num_physical = m_config.filament_colour.size();
+        const size_t num_physical = m_config.filament_diameter.size();
         for (const ModelVolume* mv : mo->volumes) {
             std::vector<int> volume_extruders = mv->get_extruders();
             for (int extruder : volume_extruders) {
@@ -1056,7 +1056,7 @@ std::vector<unsigned int> Print::extruders(bool conside_custom_gcode) const
 
     if (conside_custom_gcode) {
         //BBS
-        const size_t num_physical = m_config.filament_colour.size();
+        const size_t num_physical = m_config.filament_diameter.size();
         if (m_model.plates_custom_gcodes.find(m_model.curr_plate_index) != m_model.plates_custom_gcodes.end()) {
             for (auto item : m_model.plates_custom_gcodes.at(m_model.curr_plate_index).gcodes) {
                 if (item.type != CustomGCode::Type::ToolChange || item.extruder <= 0)

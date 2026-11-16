@@ -33,7 +33,7 @@ static void append_used_physical_extruders_for_filament_id(const Print          
     if (filament_id <= 0)
         return;
 
-    const size_t num_physical = print.config().filament_colour.size();
+    const size_t num_physical = print.config().filament_diameter.size();
     if (num_physical == 0)
         return;
 

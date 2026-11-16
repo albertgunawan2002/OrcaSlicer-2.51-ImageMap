@@ -417,7 +417,7 @@ std::vector<std::set<int>> PrintObject::detect_extruder_geometric_unprintables()
         return std::vector<std::set<int>>(1, std::set<int>());
 
     std::vector<std::set<int>> geometric_unprintables(extruder_size); // the container to return
-    const size_t num_physical_filaments = m_print->config().filament_colour.size();
+    const size_t num_physical_filaments = m_print->config().filament_diameter.size();
     const TextureMappingManager &texture_mgr = m_print->texture_mapping_manager();
     const std::vector<std::string> filament_colours = m_print->config().filament_colour.values;
     auto resolve_physical_extruders = [&texture_mgr, num_physical_filaments, &filament_colours](int filament_id) {
@@ -5059,7 +5059,7 @@ std::vector<unsigned int> PrintObject::object_extruders() const
         region.collect_object_printing_extruders(*this->print(), extruders);
 
     const ModelObject* mo = this->model_object();
-    const size_t num_physical = this->print()->config().filament_colour.size();
+    const size_t num_physical = this->print()->config().filament_diameter.size();
     for (const ModelVolume* mv : mo->volumes) {
         std::vector<int> volume_extruders = mv->get_extruders();
         for (int extruder : volume_extruders) {
