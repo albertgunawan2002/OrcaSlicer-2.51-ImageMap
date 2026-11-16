@@ -6428,6 +6428,25 @@ void GLCanvas3D::set_tooltip(const std::string& tooltip)
         m_tooltip.set_text(tooltip);
 }
 
+static bool should_persist_wipe_tower_position_for_plate(int plate_id, bool user_initiated)
+{
+    if (user_initiated)
+        return true;
+
+    Plater *plater = wxGetApp().plater();
+    if (plater == nullptr)
+        return true;
+    if (plater->is_background_process_slicing())
+        return false;
+
+    PartPlate *plate = plater->get_partplate_list().get_plate(plate_id);
+    if (plate == nullptr)
+        return true;
+
+    Print *print = plate->fff_print();
+    return !plate->is_slice_result_valid() || print == nullptr || !print->finished();
+}
+
 void GLCanvas3D::do_move(const std::string& snapshot_type, bool force_volume_move)
 {
     if (m_model == nullptr)
