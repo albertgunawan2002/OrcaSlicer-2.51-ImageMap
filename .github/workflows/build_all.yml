@@ -144,7 +144,8 @@ jobs:
           && '[{"arch":"","os":"orca-lnx-server"}]'
           || '[{"arch":"","os":"ubuntu-24.04"},{"arch":"aarch64","os":"ubuntu-24.04-arm"}]') }}
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    # ImageMap: only the Windows build is needed on this fork.
+    if: ${{ !cancelled() && github.repository == 'OrcaSlicer/OrcaSlicer' && github.event_name != 'schedule' }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ matrix.os }}
@@ -163,7 +164,7 @@ jobs:
           && '[{"arch":"x64","os":"orca-win-server","compiler":"clang"}]'
           || (github.event_name == 'pull_request'
             && '[{"arch":"x64","os":"windows-latest","compiler":"clang"}]'
-            || '[{"arch":"x64","os":"windows-latest","compiler":"clang"},{"arch":"arm64","os":"windows-11-vs2026-arm","compiler":"clang"}]')) }}
+            || '[{"arch":"x64","os":"windows-latest","compiler":"clang"}]')) }}
     needs: check_build_script
     # id-token lets release builds sign through Google Cloud Workload Identity Federation (see
     # "Configure code signing" in build_orca.yml); the rest is what the build already used.
@@ -190,7 +191,8 @@ jobs:
       matrix:
         arch: ${{ fromJSON(github.event_name == 'pull_request' && '["arm64"]' || '["arm64", "x86_64"]') }}
     # Don't run scheduled builds on forks:
-    if: ${{ !cancelled() && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    # ImageMap: only the Windows build is needed on this fork.
+    if: ${{ !cancelled() && github.repository == 'OrcaSlicer/OrcaSlicer' && github.event_name != 'schedule' }}
     uses: ./.github/workflows/build_check_cache.yml
     with:
       os: ${{ vars.SELF_HOSTED && 'orca-macos-arm64' || 'macos-15' }}
@@ -237,7 +239,7 @@ jobs:
   unit_tests_windows_arm64:
     name: Windows arm64
     needs: build_windows
-    if: ${{ !cancelled() && needs.build_windows.result == 'success' && !vars.SELF_HOSTED && github.event_name != 'pull_request' }}
+    if: ${{ false }} # ImageMap: no Windows arm64 build on this fork
     uses: ./.github/workflows/unit_tests.yml
     with:
       os: windows-11-vs2026-arm
@@ -306,6 +308,6 @@ jobs:
   flatpak:
     name: Flatpak
     # Don't run scheduled builds on forks; skip entirely on self-hosted runners
-    if: ${{ !cancelled() && !vars.SELF_HOSTED && github.event_name != 'pull_request' && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
+    if: ${{ !cancelled() && github.repository == 'OrcaSlicer/OrcaSlicer' && !vars.SELF_HOSTED && github.event_name != 'pull_request' }}
     uses: ./.github/workflows/build_flatpak.yml
     secrets: inherit
