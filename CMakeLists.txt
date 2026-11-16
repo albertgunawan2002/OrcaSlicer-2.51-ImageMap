@@ -615,7 +615,12 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
         # Turn everything else into an error. Dependency headers are exempt because the
         # SYSTEM include flag (-imsvc on clang-cl, -isystem elsewhere) keeps their
         # diagnostics out.
-        add_compile_options(-Werror)
+        # ImageMap: the fork's code is not warning-clean, so warnings stay warnings
+        # unless explicitly requested.
+        option(ORCA_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+        if (ORCA_WARNINGS_AS_ERRORS)
+            add_compile_options(-Werror)
+        endif ()
     endif ()
 
     # Demoted. Remove a name once its category is cleared on every compiler.
