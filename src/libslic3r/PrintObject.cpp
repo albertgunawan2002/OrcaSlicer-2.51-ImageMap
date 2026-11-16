@@ -379,8 +379,8 @@ static std::vector<unsigned int> physical_extruders_for_filament_id(const Textur
         if (out.empty())
             append_physical(texture_mgr.resolve_zone_component(unsigned(filament_id), num_physical, 0));
     } else {
-        const unsigned int physical_id = unsigned(filament_id);
-        append_physical(physical_id <= num_physical ? physical_id : 1);
+        // Like upstream, a plain filament id is taken as is (0-based), unclamped.
+        out.emplace_back(unsigned(filament_id) - 1);
     }
 
     sort_remove_duplicates(out);

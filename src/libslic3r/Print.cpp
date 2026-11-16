@@ -165,8 +165,8 @@ static void append_used_physical_extruders_for_filament_id(const TextureMappingM
         return;
     }
 
-    const unsigned int physical_id = unsigned(filament_id);
-    append_physical(physical_id <= num_physical ? physical_id : 1);
+    // Like upstream, a plain filament id is taken as is (0-based), unclamped.
+    extruders.emplace_back(unsigned(filament_id) - 1);
 }
 
 static std::array<float, 3> prime_tower_parse_hex_color_for_print(const std::string &hex)

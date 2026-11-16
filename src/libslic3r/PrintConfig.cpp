@@ -7397,7 +7397,7 @@ void PrintConfigDef::init_fff_params()
     def->enum_labels.push_back(L("Normal (manual)"));
     def->enum_labels.push_back(L("Tree (manual)"));
     def->mode = comSimple;
-    def->set_default_value(new ConfigOptionEnum<SupportType>(stTreeAuto));
+    def->set_default_value(new ConfigOptionEnum<SupportType>(stNormalAuto));
 
     def = this->add("support_object_xy_distance", coFloat);
     def->label = L("Support/object XY distance");
