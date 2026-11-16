@@ -80,9 +80,11 @@ TEST_CASE("Painted filaments slice when the display palette is shorter than the 
     const auto segmentation = multi_material_segmentation_by_painting(*object, [] {});
     REQUIRE_FALSE(segmentation.empty());
     bool second_filament_present = false;
+    // ImageMap: the segmentation is indexed by facet state, with slot 0 for unpainted areas,
+    // so two filaments give three slots and the second filament is slot 2.
     for (const auto &layer : segmentation) {
-        REQUIRE(layer.size() == 2);
-        second_filament_present |= !layer[1].empty();
+        REQUIRE(layer.size() == 3);
+        second_filament_present |= !layer[2].empty();
     }
     REQUIRE(second_filament_present);
 }

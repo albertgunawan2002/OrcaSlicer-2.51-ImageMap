@@ -1479,6 +1479,7 @@ static std::vector<std::string> s_Preset_print_options{
     "wipe_tower_bridging",
     "wipe_tower_extra_flow",
     "single_extruder_multi_material_priming",
+    "texture_mapping_background_color",
     "texture_mapping_outer_wall_gradient_global_strength",
     "texture_mapping_outer_wall_gradient_max_line_width",
     "texture_mapping_outer_wall_gradient_min_line_width",

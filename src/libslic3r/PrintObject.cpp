@@ -1464,7 +1464,6 @@ void PrintObject::generate_support_material(bool with_belt_brim)
                 m_print->throw_if_canceled();
             }
             restore_support_geometry();
-            this->set_done(posSupportMaterial);
         } catch (...) {
             restore_support_geometry();
             throw;

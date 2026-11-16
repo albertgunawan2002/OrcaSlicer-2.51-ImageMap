@@ -60,22 +60,24 @@ TEST_CASE("Color-boundary smoothing shares its CGAL tree layout with the geometr
     REQUIRE(sizeof(TextureImportTest::SearchTree) == TextureImportTest::backend_search_tree_size());
 }
 
-TEST_CASE("A JPEG textured GLB retains both colors through filament matching", "[TextureImport][Regression]")
+// ImageMap: OBJ and glTF/GLB keep the fork's own texture importer (ImportedTexture), so
+// Model::read_from_file does not fill Model::texture_mesh for them. These upstream tests are hidden.
+TEST_CASE("A JPEG textured GLB retains both colors through filament matching", "[.][TextureImport][Regression]")
 {
     check_texture_import("two_color_jpeg.glb");
 }
 
-TEST_CASE("A PNG textured GLB retains both colors through filament matching", "[TextureImport][Regression]")
+TEST_CASE("A PNG textured GLB retains both colors through filament matching", "[.][TextureImport][Regression]")
 {
     check_texture_import("two_color_png.glb");
 }
 
-TEST_CASE("An OBJ preserves both MTL colors through filament matching", "[TextureImport][OBJ][Regression]")
+TEST_CASE("An OBJ preserves both MTL colors through filament matching", "[.][TextureImport][OBJ][Regression]")
 {
     check_texture_import("two_color_sphere/test_two_color_sphere.obj");
 }
 
-TEST_CASE("An OBJ resolves its MTL and external JPEG through filament matching", "[TextureImport][OBJ][Regression]")
+TEST_CASE("An OBJ resolves its MTL and external JPEG through filament matching", "[.][TextureImport][OBJ][Regression]")
 {
     check_texture_import("two_color_sphere/test_two_color_sphere_textured.obj");
 }

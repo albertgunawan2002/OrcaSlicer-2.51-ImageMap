@@ -188,12 +188,25 @@ void PrintRegion::collect_object_printing_extruders(const Print &print, std::vec
     assert(can_resolve_filament_id(this->config().top_surface_filament_id));
     assert(can_resolve_filament_id(this->config().bottom_surface_filament_id));
 #endif
-    if (this->config().wall_loops.value > 0 || print.has_brim())
-        append_used_physical_extruders_for_filament_id(print, this->config().outer_wall_filament_id.value, object_extruders);
-    if (this->config().sparse_infill_density.value > 0)
-        append_used_physical_extruders_for_filament_id(print, this->config().sparse_infill_filament_id.value, object_extruders);
-    if (this->config().top_shell_layers.value > 0 || this->config().bottom_shell_layers.value > 0)
-        append_used_physical_extruders_for_filament_id(print, this->config().internal_solid_filament_id.value, object_extruders);
+    // Same feature/role logic as the static overload above, with texture mapping zones resolved to their
+    // physical component filaments.
+    const PrintRegionConfig &cfg = this->config();
+    auto append_id = [&print, &object_extruders](int filament_id) {
+        append_used_physical_extruders_for_filament_id(print, std::max(1, filament_id), object_extruders);
+    };
+    if (cfg.wall_loops.value > 0 || print.has_brim()) {
+        append_id(cfg.outer_wall_filament_id.value);
+        if (cfg.wall_loops.value > 1)
+            append_id(cfg.inner_wall_filament_id.value);
+    }
+    if (cfg.sparse_infill_density.value > 0)
+        append_id(cfg.sparse_infill_filament_id.value);
+    if (cfg.sparse_infill_density.value > 0 || cfg.top_shell_layers.value > 0 || cfg.bottom_shell_layers.value > 0)
+        append_id(cfg.internal_solid_filament_id.value);
+    if (cfg.top_shell_layers.value > 0)
+        append_id(cfg.top_surface_filament_id.value);
+    if (cfg.bottom_shell_layers.value > 0)
+        append_id(cfg.bottom_surface_filament_id.value);
 }
 
 }

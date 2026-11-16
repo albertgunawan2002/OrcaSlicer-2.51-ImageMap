@@ -895,7 +895,8 @@ TEST_CASE("TextureDisplacement: a colour texture decodes to both colour and heig
     CHECK(int(tex.pixels[3]) == 255);                           // white
 }
 
-TEST_CASE("A 16-bit colour texture decodes to nothing rather than noise", "[TextureDisplacement]")
+// ImageMap: decode_colored_png() narrows 16-bit images to 8 bits, so such a texture now decodes properly.
+TEST_CASE("A 16-bit colour texture decodes to its colours rather than noise", "[TextureDisplacement]")
 {
     // The 2x2 image above at 16 bits per channel. The texture library converts such a file to 8-bit
     // on load, so it can only arrive here stored as-is, from a project file.
@@ -912,7 +913,9 @@ TEST_CASE("A 16-bit colour texture decodes to nothing rather than noise", "[Text
     layer.slot       = 0;
     layer.image_data = std::make_shared<std::vector<unsigned char>>(std::begin(bytes), std::end(bytes));
 
-    CHECK(decode_height_texture(layer).empty());
+    const DecodedHeightTexture decoded = decode_height_texture(layer);
+    CHECK(decoded.width == 2);
+    CHECK(decoded.height == 2);
 }
 
 TEST_CASE("A truncated texture decodes to nothing instead of aborting", "[TextureDisplacement]")

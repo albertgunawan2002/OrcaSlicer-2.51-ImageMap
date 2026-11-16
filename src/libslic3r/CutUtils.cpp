@@ -73,13 +73,15 @@ static void apply_cut_texture_data(ModelVolume *volume, const SimplifyTextureDat
     apply_simplify_texture_data_result(*volume, std::move(result));
 }
 
-static bool volume_has_remappable_color_data(const ModelVolume &volume)
+// Region painting (MMU/support/seam) is carried through the merge by save_painting/restore_painting,
+// so only ImageMap texture data keeps a part from being merged.
+static bool volume_has_remappable_color_data(const ModelVolume &volume, bool include_region_painting = true)
 {
     const indexed_triangle_set &its = volume.mesh().its;
     if (its.vertices.empty() || its.indices.empty())
         return false;
 
-    if (model_volume_region_painting_needs_remap(volume))
+    if (include_region_painting && model_volume_region_painting_needs_remap(volume))
         return true;
 
     if (!volume.texture_mapping_color_facets.empty())
@@ -544,7 +546,7 @@ static void merge_solid_parts_inside_object(ModelObjectPtrs& objects)
         // ImageMap: parts carrying color/texture data keep their own meshes, so that data stays bound to them.
         bool has_remappable_color_data = false;
         for (const ModelVolume* mv : mo->volumes) {
-            if (mv->is_model_part() && !mv->is_cut_connector() && volume_has_remappable_color_data(*mv)) {
+            if (mv->is_model_part() && !mv->is_cut_connector() && volume_has_remappable_color_data(*mv, false)) {
                 has_remappable_color_data = true;
                 break;
             }

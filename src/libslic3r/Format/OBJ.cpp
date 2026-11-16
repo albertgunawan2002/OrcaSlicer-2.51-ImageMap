@@ -200,12 +200,12 @@ bool load_obj(const char *path, TriangleMesh *meshptr, ObjInfo& obj_info, std::s
                 Vec2f uv0 = Vec2f::Zero();
                 Vec2f uv1 = Vec2f::Zero();
                 Vec2f uv2 = Vec2f::Zero();
-                if (read_uv(triangle_uv_indices[0], uv0) &&
-                    read_uv(triangle_uv_indices[1], uv1) &&
-                    read_uv(triangle_uv_indices[2], uv2)) {
-                    std::array<Vec2f, 3> uv_array{uv0, uv1, uv2};
-                    obj_info.uvs.emplace_back(uv_array);
-                }
+                // A face vertex may omit vt or reference a missing one. Fall back to (0, 0) rather than
+                // skipping the face, so obj_info.uvs stays aligned with the face indices.
+                if (!read_uv(triangle_uv_indices[0], uv0)) uv0 = Vec2f::Zero();
+                if (!read_uv(triangle_uv_indices[1], uv1)) uv1 = Vec2f::Zero();
+                if (!read_uv(triangle_uv_indices[2], uv2)) uv2 = Vec2f::Zero();
+                obj_info.uvs.emplace_back(std::array<Vec2f, 3>{uv0, uv1, uv2});
             }
             obj_info.face_colors.emplace_back(face_color);
         }
