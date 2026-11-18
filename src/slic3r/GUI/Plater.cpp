@@ -1053,9 +1053,9 @@ static bool assign_imported_texture_mapping_zone(Model &model)
     return true;
 }
 
-static const std::array<const char *, 10> &texture_mapping_filament_config_keys()
+static const std::array<const char *, 9> &texture_mapping_filament_config_keys()
 {
-    static const std::array<const char *, 10> filament_keys = {
+    static const std::array<const char *, 9> filament_keys = {
         "extruder",
         "outer_wall_filament_id",
         "inner_wall_filament_id",
