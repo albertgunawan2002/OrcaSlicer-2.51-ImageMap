@@ -39,7 +39,7 @@ jobs:
           $base = [Convert]::ToInt64((& "$llvm\llvm-objdump.exe" -p $dll | Select-String 'ImageBase' | Select-Object -First 1).ToString().Trim().Split()[-1], 16)
           Write-Host "VA=$va BASE=$base"
           foreach ($o in (Get-Content offsets.txt).Trim().Split(' ')) {
-            $addr = '0x{0:X}' -f ($base + $va + [Convert]::ToInt64($o.Substring(2), 16))
+            $addr = '0x{0:X}' -f ($va + [Convert]::ToInt64($o.Substring(2), 16))
             Write-Host "=== $o -> $addr"
             & "$llvm\llvm-symbolizer.exe" --obj=$dll --inlining --functions=linkage --demangle $addr
           }
