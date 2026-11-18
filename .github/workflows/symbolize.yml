@@ -1,0 +1,41 @@
+name: Symbolize crash
+on:
+  push:
+    branches: [debug/symbolize]
+jobs:
+  symbolize:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: PDB
+          path: pdb
+          run-id: 43806024122
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: OrcaSlicer_Windows_V1.1.0-dev_x64_portable
+          path: app
+          run-id: 43806024122
+          github-token: ${{ github.token }}
+      - name: Symbolize
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse pdb,app -Include *.pdb,OrcaSlicer.dll | ForEach-Object { $_.FullName }
+          $dll = (Get-ChildItem -Recurse app -Filter OrcaSlicer.dll | Select-Object -First 1).FullName
+          $pdb = (Get-ChildItem -Recurse pdb -Filter OrcaSlicer.pdb | Select-Object -First 1).FullName
+          Copy-Item $pdb (Split-Path $dll)
+          $llvm = "C:\Program Files\LLVM\bin"
+          & "$llvm\llvm-objdump.exe" -h $dll | Select-Object -First 12
+          $text = & "$llvm\llvm-objdump.exe" -h $dll | Select-String '\.text' | Select-Object -First 1
+          Write-Host "TEXT: $text"
+          $parts = ($text.ToString().Trim() -split '\s+')
+          $va = [Convert]::ToInt64($parts[3], 16)
+          $base = [Convert]::ToInt64((& "$llvm\llvm-objdump.exe" -p $dll | Select-String 'ImageBase' | Select-Object -First 1).ToString().Trim().Split()[-1], 16)
+          Write-Host "VA=$va BASE=$base"
+          foreach ($o in (Get-Content offsets.txt).Trim().Split(' ')) {
+            $addr = '0x{0:X}' -f ($base + $va + [Convert]::ToInt64($o.Substring(2), 16))
+            Write-Host "=== $o -> $addr"
+            & "$llvm\llvm-symbolizer.exe" --obj=$dll --inlining --functions=linkage --demangle $addr
+          }
