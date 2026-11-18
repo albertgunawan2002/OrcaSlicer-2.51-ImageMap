@@ -22,10 +22,14 @@ jobs:
       - name: Symbolize
         shell: pwsh
         run: |
-          Get-ChildItem -Recurse pdb,app -Include *.pdb,OrcaSlicer.dll | ForEach-Object { $_.FullName }
+          Get-ChildItem -Recurse pdb | ForEach-Object { "$($_.FullName) $($_.Length)" }
+          Get-ChildItem -Recurse pdb -Filter *.zip | ForEach-Object { Expand-Archive $_.FullName -DestinationPath pdb\x -Force }
+          Get-ChildItem -Recurse pdb -Filter *.7z | ForEach-Object { 7z x $_.FullName -opdb\x -y | Out-Null }
+          Get-ChildItem -Recurse pdb -Filter *.pdb | ForEach-Object { "$($_.FullName) $($_.Length)" }
           $dll = (Get-ChildItem -Recurse app -Filter OrcaSlicer.dll | Select-Object -First 1).FullName
-          $pdb = (Get-ChildItem -Recurse pdb -Filter OrcaSlicer.pdb | Select-Object -First 1).FullName
-          Copy-Item $pdb (Split-Path $dll)
+          $pdb = (Get-ChildItem -Recurse pdb -Filter *.pdb | Where-Object { $_.Name -like 'OrcaSlicer*' -and $_.Name -notlike '*exe*' } | Sort-Object Length -Descending | Select-Object -First 1).FullName
+          Write-Host "PDB: $pdb"
+          Copy-Item $pdb (Join-Path (Split-Path $dll) "OrcaSlicer.pdb")
           $llvm = "C:\Program Files\LLVM\bin"
           & "$llvm\llvm-objdump.exe" -h $dll | Select-Object -First 12
           $text = & "$llvm\llvm-objdump.exe" -h $dll | Select-String '\.text' | Select-Object -First 1
