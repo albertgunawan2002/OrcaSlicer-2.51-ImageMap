@@ -750,6 +750,29 @@ static void clamp_wipe_tower_positions_for_slicing(PartPlateList &partplate_list
         const coordf_t max_x = plate_bbox_2d.max(0) - plate_origin(0);
         const coordf_t min_y = plate_bbox_2d.min(1) - plate_origin(1);
         const coordf_t max_y = plate_bbox_2d.max(1) - plate_origin(1);
+        // A position the user chose stays put as long as it is actually printable: inside the bed by the normal
+        // margin and clear of every object's footprint. Only an invalid position is re-placed, with the extra
+        // comfort buffers. Re-placing every valid position closer than 20 mm to an edge or 10 mm to an object made
+        // a dragged tower jump back on the next config change or slice.
+        {
+            const float x = wipe_tower_x->get_at(plate_id);
+            const float y = wipe_tower_y->get_at(plate_id);
+            const float valid_margin = float(WIPE_TOWER_MARGIN) + brim_width;
+            const bool inside_bed = x >= float(min_x) + valid_margin - EPSILON &&
+                                    y >= float(min_y) + valid_margin - EPSILON &&
+                                    x + float(wipe_tower_size(0)) <= float(max_x) - valid_margin + EPSILON &&
+                                    y + float(wipe_tower_size(1)) <= float(max_y) - valid_margin + EPSILON;
+            bool clear_of_objects = true;
+            const Rectf tower_rect { x, y, x + float(wipe_tower_size(0)), y + float(wipe_tower_size(1)) };
+            for (const Rectf &object_rect : collect_object_rects(part_plate, brim_width))
+                if (rects_overlap(tower_rect, object_rect)) {
+                    clear_of_objects = false;
+                    break;
+                }
+            if (inside_bed && clear_of_objects)
+                continue;
+        }
+
         const std::vector<Rectf> object_rects = collect_object_rects(part_plate, brim_width + WIPE_TOWER_OBJECT_CLEARANCE);
         const Vec2f safe_pos = choose_safe_position(wipe_tower_x->get_at(plate_id),
                                                     wipe_tower_y->get_at(plate_id),
