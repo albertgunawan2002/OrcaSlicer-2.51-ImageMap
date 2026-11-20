@@ -8871,6 +8871,17 @@ static void resolve_segment_shift_outward_normal_for_gcode(const Layer *layer,
     outward_y = n0y;
 }
 
+// Moves a point on the outer wall centreline out to the model surface it was generated from.
+static Point texture_sample_point_on_surface_for_gcode(const Point &centreline_point, double outward_x, double outward_y, float distance_mm)
+{
+    const double len = std::hypot(outward_x, outward_y);
+    if (!std::isfinite(len) || len <= 1e-9 || !std::isfinite(distance_mm) || distance_mm <= 0.f)
+        return centreline_point;
+    const double d = scale_(double(distance_mm)) / len;
+    return Point(coord_t(std::llround(double(centreline_point.x()) + outward_x * d)),
+                 coord_t(std::llround(double(centreline_point.y()) + outward_y * d)));
+}
+
 static bool clamped_shift_coord_for_gcode(double direction_component, double shift_scaled, coord_t max_abs_shift, coord_t &out)
 {
     if (!std::isfinite(direction_component) || !std::isfinite(shift_scaled))
@@ -12840,8 +12851,10 @@ std::optional<PreferredSeamPoint> GCode::texture_mapping_seam_hiding_hint(const 
         if (vertex_color_match_mode) {
             if (state.weight_field == nullptr || state.weight_field->empty())
                 return std::nullopt;
-            const float sample_x_mm = unscale<float>(center_point.x());
-            const float sample_y_mm = unscale<float>(center_point.y());
+            // Sample the texture on the model surface, not on the centreline half a line width inside it.
+            const Point surface_point = texture_sample_point_on_surface_for_gcode(center_point, outward_x, outward_y, 0.5f * flow_reference_width_mm);
+            const float sample_x_mm = unscale<float>(surface_point.x());
+            const float sample_y_mm = unscale<float>(surface_point.y());
             const float desired_strength =
                 sample_vertex_color_weight_field_for_gcode(*state.weight_field,
                                                            sample_x_mm,
@@ -15518,9 +15531,15 @@ std::string GCode::_extrude_imagemap(const ExtrusionPath &path, std::string desc
                                     double outward_y = 0.0;
                                     resolve_segment_shift_outward_normal_for_gcode(m_layer, mid_point, dx, dy, len, radial_x, radial_y, outward_x, outward_y);
 
+                                    // The wall centreline lies half a line width inside the model surface, but the
+                                    // texture is sampled on the surface. With a wide max width the centreline ended
+                                    // up out of reach of every surface sample and the whole layer fell back to one
+                                    // averaged colour, so sample at the surface point instead.
+                                    const Point texture_sample_point = texture_sample_point_on_surface_for_gcode(
+                                        mid_point, outward_x, outward_y, 0.5f * flow_reference_width_mm);
                                     const float width_delta_mm = std::clamp(
                                         texture_mapping_offset_surface_inset_mm(outer_wall_gradient_dynamic_ctx.offset_context,
-                                                                               mid_point,
+                                                                               texture_sample_point,
                                                                                -outward_x,
                                                                                -outward_y,
                                                                                surface_coord.u_mm,
@@ -15666,9 +15685,11 @@ std::string GCode::_extrude_imagemap(const ExtrusionPath &path, std::string desc
             2.f * outer_wall_gradient_dynamic_ctx.inset_strength_reference_mm);
         if (!std::isfinite(max_width_delta_limit_mm) || max_width_delta_limit_mm <= EPSILON)
             return OuterWallGradientSegmentMod{};
+        const Point texture_sample_point = texture_sample_point_on_surface_for_gcode(
+            mid_point, outward_x, outward_y, 0.5f * outer_wall_gradient_dynamic_ctx.flow_reference_width_mm);
         const float width_delta_mm = std::clamp(
             texture_mapping_offset_surface_inset_mm(outer_wall_gradient_dynamic_ctx.offset_context,
-                                                   mid_point,
+                                                   texture_sample_point,
                                                    -outward_x,
                                                    -outward_y,
                                                    surface_coord.u_mm,

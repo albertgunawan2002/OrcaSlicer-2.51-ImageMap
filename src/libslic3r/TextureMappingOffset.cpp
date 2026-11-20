@@ -2609,7 +2609,10 @@ std::vector<float> sample_weight_field_components_impl(const TextureMappingOffse
 
     float nearest_d2 = std::numeric_limits<float>::max();
     size_t nearest_sample_idx = size_t(-1);
-    const int nearest_ring_limit = std::min(std::max(max_ring + 2, 4), std::max(weight_field.bucket_width, weight_field.bucket_height));
+    // Reach at least ~1.5 mm so a query point somewhat inside the surface still finds the nearest surface sample
+    // instead of falling back to the layer-wide average colour.
+    const int nearest_ring_limit = std::min(std::max({ max_ring + 2, 4, int(std::ceil(1.5f / min_bucket_span_mm)) }),
+                                            std::max(weight_field.bucket_width, weight_field.bucket_height));
     for (int ring = 0; ring <= nearest_ring_limit; ++ring) {
         const int min_x = std::max(0, cx - ring);
         const int max_x = std::min(weight_field.bucket_width - 1, cx + ring);
