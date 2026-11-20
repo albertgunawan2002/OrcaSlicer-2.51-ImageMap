@@ -2738,16 +2738,6 @@ float transmission_distance_reference(bool is_black)
     return is_black ? 0.1f : 3.f;
 }
 
-float transmission_distance_opacity(float td_mm, float path_extension_mm)
-{
-    constexpr float surface_scatter = 0.50f;
-    constexpr float surface_depth_mm = 0.32f;
-    const float safe_td = std::clamp(td_mm, 0.01f, 50.f);
-    const float path_mm = std::max(0.f, surface_depth_mm + std::max(0.f, path_extension_mm));
-    const float opacity = surface_scatter + (1.f - surface_scatter) * (1.f - std::exp(-path_mm / safe_td));
-    return std::clamp(opacity, 1e-4f, 1.f);
-}
-
 TransmissionDistanceCalibrationContext transmission_distance_calibration_context(
     const TextureMappingZone &zone,
     const std::vector<unsigned int> &component_ids,
@@ -2775,23 +2765,29 @@ TransmissionDistanceCalibrationContext transmission_distance_calibration_context
     if (!has_active_explicit_td)
         return context;
 
+    // Relative TD: the filaments of the zone are compared with each other, not with fixed 0.1 mm / 3 mm references.
+    // The most see-through filament keeps its full width and every more opaque filament is pulled back in proportion
+    // to how much more light it blocks, so an opaque black next to translucent light colours no longer dominates.
     const bool neighbor_mode = context.mode == int(TextureMappingZone::TDCalibrationNeighbor);
-    const float path_extension_mm = neighbor_mode ? 0.16f : 0.12f;
-    const float own_power = neighbor_mode ? 0.25f : 0.35f;
+    const float path_mm = 0.32f + (neighbor_mode ? 0.16f : 0.12f);
+    const float own_power = neighbor_mode ? 0.5f : 0.6f;
     context.own_width_factors.assign(component_ids.size(), 1.f);
     context.neighbor_opacity_ratios.assign(component_ids.size(), 1.f);
     context.enabled = true;
+
+    std::vector<float> opacities(component_ids.size(), 1.f);
     for (size_t idx = 0; idx < component_ids.size(); ++idx) {
         const bool is_black = texture_mapping_component_is_black(idx, filament_color_mode, component_colors);
-        const float reference_td_mm = transmission_distance_reference(is_black);
-        const float actual_td_mm = explicit_tds[idx] > 0.f ? explicit_tds[idx] : reference_td_mm;
-        const float actual_opacity = transmission_distance_opacity(actual_td_mm, path_extension_mm);
-        const float reference_opacity = transmission_distance_opacity(reference_td_mm, path_extension_mm);
-        context.own_width_factors[idx] =
-            std::clamp(std::pow(reference_opacity / std::max(actual_opacity, 1e-4f), own_power), 0.25f, 2.f);
-        context.neighbor_opacity_ratios[idx] =
-            std::clamp(actual_opacity / std::max(reference_opacity, 1e-4f), 0.25f, 4.f);
+        const float td_mm = std::clamp(explicit_tds[idx] > 0.f ? explicit_tds[idx] : transmission_distance_reference(is_black), 0.01f, 50.f);
+        opacities[idx] = std::clamp(1.f - std::exp(-path_mm / td_mm), 1e-3f, 1.f);
     }
+    const float min_opacity = *std::min_element(opacities.begin(), opacities.end());
+    const float mean_opacity = std::accumulate(opacities.begin(), opacities.end(), 0.f) / float(opacities.size());
+    for (size_t idx = 0; idx < component_ids.size(); ++idx) {
+        context.own_width_factors[idx] = std::clamp(std::pow(min_opacity / opacities[idx], own_power), 0.25f, 1.f);
+        context.neighbor_opacity_ratios[idx] = std::clamp(opacities[idx] / std::max(mean_opacity, 1e-3f), 0.25f, 4.f);
+    }
+
     return context;
 }
 
