@@ -16685,6 +16685,10 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
     bool invalid_bed_exclude_area = false;
     int current_width = 0, current_depth = 0;
     double current_height = 0;
+    // Prime tower positions read from a loaded project, put back once loading has finished in case a bed,
+    // preset or filament change during the load re-placed the towers.
+    std::optional<ConfigOptionFloats> loaded_project_wipe_tower_x;
+    std::optional<ConfigOptionFloats> loaded_project_wipe_tower_y;
 
     if (input_files.empty())
         return std::vector<size_t>();
@@ -17702,6 +17706,8 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                     *wipe_tower_x = *file_wipe_tower_x;
                                 if (file_wipe_tower_y)
                                     *wipe_tower_y = *file_wipe_tower_y;
+                                loaded_project_wipe_tower_x = file_wipe_tower_x;
+                                loaded_project_wipe_tower_y = file_wipe_tower_y;
 
                                 sync_loaded_project_filament_config(proj_cfg);
                             }
@@ -18335,6 +18341,22 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
         for (const auto& entry : import_options)
             save_geometry_import_options(*wxGetApp().app_config, entry.first, entry.second);
         save_geometry_import_name_policy(*wxGetApp().app_config, name_policy);
+    }
+    if (loaded_project_wipe_tower_x && loaded_project_wipe_tower_y && !loaded_project_wipe_tower_x->values.empty() &&
+        loaded_project_wipe_tower_x->values.size() == loaded_project_wipe_tower_y->values.size()) {
+        DynamicConfig &proj_cfg = wxGetApp().preset_bundle->project_config;
+        ConfigOptionFloats *wipe_tower_x = proj_cfg.option<ConfigOptionFloats>("wipe_tower_x", true);
+        ConfigOptionFloats *wipe_tower_y = proj_cfg.option<ConfigOptionFloats>("wipe_tower_y", true);
+        const size_t plates = std::max<size_t>(1, size_t(partplate_list.get_plate_count()));
+        wipe_tower_x->values.resize(plates, wipe_tower_x->values.empty() ? 0. : wipe_tower_x->values.front());
+        wipe_tower_y->values.resize(plates, wipe_tower_y->values.empty() ? 0. : wipe_tower_y->values.front());
+        for (size_t plate_idx = 0; plate_idx < plates && plate_idx < loaded_project_wipe_tower_x->values.size(); ++plate_idx) {
+            wipe_tower_x->values[plate_idx] = loaded_project_wipe_tower_x->values[plate_idx];
+            wipe_tower_y->values[plate_idx] = loaded_project_wipe_tower_y->values[plate_idx];
+        }
+        BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << ": restored prime tower positions saved in the project";
+        if (view3D != nullptr)
+            view3D->reload_scene(true);
     }
     q->schedule_background_process(true);
     q->mark_plate_toolbar_image_dirty();

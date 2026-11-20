@@ -6605,6 +6605,21 @@ void PartPlateList::set_default_wipe_tower_pos_for_plate(int plate_idx, bool ini
     const float brim_width = float(footprint.brim_width);
     const float margin     = WIPE_TOWER_AUTO_MARGIN + brim_width + WIPE_TOWER_EDGE_BUFFER;
 
+    // A re-clamp (bed size or printer preset change, which also happens while a project is opened) keeps a
+    // tower that still fits on the bed where it is, instead of sending it back to the default corner. Only a
+    // newly created plate, or a tower the new bed no longer holds, gets the default position.
+    if (!init_pos) {
+        const float valid_margin = float(WIPE_TOWER_MARGIN) + brim_width;
+        if (old_x >= float(plate_bbox_x_min_local_coord) + valid_margin &&
+            old_x + float(wipe_tower_size(0)) <= float(plate_bbox_x_max_local_coord) - valid_margin &&
+            old_y >= float(plate_bbox_2d.min(1) - plate_origin(1)) + valid_margin &&
+            old_y + float(wipe_tower_size(1)) <= float(plate_bbox_y_max_local_coord) - valid_margin) {
+            BOOST_LOG_TRIVIAL(info) << "set_default_wipe_tower_pos_for_plate: kept wipe tower position, plate=" << plate_idx
+                                    << ", x=" << old_x << ", y=" << old_y;
+            return;
+        }
+    }
+
     // clamp wipe tower position within plate boundaries
     {
         if (x + margin + wipe_tower_size(0) > plate_bbox_x_max_local_coord) {
