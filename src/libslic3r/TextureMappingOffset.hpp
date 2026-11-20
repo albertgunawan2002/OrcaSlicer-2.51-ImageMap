@@ -98,6 +98,9 @@ struct TextureMappingOffsetContext {
     float                           active_component_strength_factor { 1.f };
     float                           active_component_minimum_offset_factor { 0.f };
     float                           active_component_td_width_factor { 1.f };
+    // Per-component TD width factors (without the neighbour term), used to renormalise TD at each sample so the
+    // filament that should be outermost there still reaches the model surface. Empty when TD is off.
+    std::vector<float>              component_td_width_factors;
     float                           base_outer_width_mm { 0.f };
     float                           layer_height_mm { 0.f };
     float                           sample_z_mm { std::numeric_limits<float>::quiet_NaN() };

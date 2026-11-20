@@ -12836,6 +12836,7 @@ std::optional<PreferredSeamPoint> GCode::texture_mapping_seam_hiding_hint(const 
             return std::nullopt;
 
         float inset_strength = 0.f;
+        float td_width_factor = state.active_component_td_width_factor;
         if (vertex_color_match_mode) {
             if (state.weight_field == nullptr || state.weight_field->empty())
                 return std::nullopt;
@@ -12849,6 +12850,25 @@ std::optional<PreferredSeamPoint> GCode::texture_mapping_seam_hiding_hint(const 
                                                            high_resolution_texture_sampling,
                                                            compact_offset_mode);
             inset_strength = std::clamp(1.f - desired_strength, 0.f, 1.f);
+            // Same TD renormalisation as texture_mapping_offset_surface_inset_mm: the strongest TD-weighted
+            // filament at the sample keeps full width, so TD does not pull the outer surface in.
+            if (!calibrated_side_mode && td_calibration_context.enabled && !halftone_dithering_enabled &&
+                state.active_component_idx < td_calibration_context.own_width_factors.size()) {
+                float max_weight = 0.f;
+                float max_td_weight = 0.f;
+                for (size_t idx = 0; idx < td_calibration_context.own_width_factors.size(); ++idx) {
+                    const float w = idx == state.active_component_idx ?
+                        desired_strength :
+                        sample_vertex_color_weight_field_for_gcode(*state.weight_field, sample_x_mm, sample_y_mm, idx,
+                                                                   high_resolution_texture_sampling, compact_offset_mode);
+                    if (!std::isfinite(w) || w <= 0.f)
+                        continue;
+                    max_weight = std::max(max_weight, w);
+                    max_td_weight = std::max(max_td_weight, w * td_calibration_context.own_width_factors[idx]);
+                }
+                if (max_weight > EPSILON && max_td_weight > EPSILON)
+                    td_width_factor *= max_weight / max_td_weight;
+            }
         } else {
             const float z_progress = object_layer_count > 1 ?
                 std::clamp(float(state.layer_index) / float(object_layer_count - 1), 0.f, 1.f) :
@@ -12907,7 +12927,7 @@ std::optional<PreferredSeamPoint> GCode::texture_mapping_seam_hiding_hint(const 
                                                                 max_width_delta_limit_mm,
                                                                 state.active_component_minimum_offset_factor,
                                                                 state.active_component_strength_factor,
-                                                                state.active_component_td_width_factor,
+                                                                td_width_factor,
                                                                 nonlinear_offset_adjustment,
                                                                 layer_height_mm,
                                                                 stair_step_mm);

@@ -3829,11 +3829,38 @@ std::optional<TextureMappingOffsetContext> build_texture_mapping_offset_context_
     context.active_component_td_width_factor = linear_gradient_mode || calibrated_side_mode ?
         1.f :
         transmission_distance_width_factor(td_calibration_context, active_component_idx, previous_component_idx);
+    if (!linear_gradient_mode && !calibrated_side_mode && td_calibration_context.enabled)
+        context.component_td_width_factors = td_calibration_context.own_width_factors;
     context.base_outer_width_mm = base_outer_width_mm;
     context.layer_height_mm = layer_height_mm;
     context.sample_z_mm = sample_z_mm;
     context.layer = &layer;
     return context;
+}
+
+// TD scales each filament's width by how opaque it is. Applied as is, a face printed in one opaque filament would be
+// pulled inside the model surface and change the part's size. Renormalise at the sample so the strongest TD-weighted
+// filament there stays at full width: TD only shifts the balance between filaments, never the outer geometry.
+static float renormalized_td_width_factor(const TextureMappingOffsetContext &context, float active_weight, float x_mm, float y_mm)
+{
+    float td_factor = context.active_component_td_width_factor;
+    const size_t n = context.component_td_width_factors.size();
+    if (n == 0 || context.halftone_dithering_enabled || context.active_component_idx >= n)
+        return td_factor;
+    float max_weight = 0.f;
+    float max_td_weight = 0.f;
+    for (size_t idx = 0; idx < n; ++idx) {
+        const float w = idx == context.active_component_idx ?
+            active_weight :
+            sample_weight_field(context.weight_field, x_mm, y_mm, idx, context.high_resolution_texture_sampling, context.compact_offset_mode);
+        if (!std::isfinite(w) || w <= 0.f)
+            continue;
+        max_weight = std::max(max_weight, w);
+        max_td_weight = std::max(max_td_weight, w * context.component_td_width_factors[idx]);
+    }
+    if (max_weight > EPSILON && max_td_weight > EPSILON)
+        td_factor *= max_weight / max_td_weight;
+    return td_factor;
 }
 
 float texture_mapping_offset_surface_inset_mm(const TextureMappingOffsetContext &context,
@@ -3849,6 +3876,7 @@ float texture_mapping_offset_surface_inset_mm(const TextureMappingOffsetContext 
     const double outward_x = -inward_x;
     const double outward_y = -inward_y;
     float inset_strength = 0.f;
+    float td_width_factor = context.active_component_td_width_factor;
     if (context.vertex_color_match_mode) {
         float desired_strength =
             sample_weight_field(context.weight_field,
@@ -3857,6 +3885,7 @@ float texture_mapping_offset_surface_inset_mm(const TextureMappingOffsetContext 
                                 context.active_component_idx,
                                 context.high_resolution_texture_sampling,
                                 context.compact_offset_mode);
+        td_width_factor = renormalized_td_width_factor(context, desired_strength, unscale<float>(point.x()), unscale<float>(point.y()));
         if (context.halftone_dithering_enabled) {
             const float x_mm = unscale<float>(point.x());
             const float y_mm = unscale<float>(point.y());
@@ -3943,7 +3972,7 @@ float texture_mapping_offset_surface_inset_mm(const TextureMappingOffsetContext 
                                                      context.max_width_delta_mm,
                                                      context.active_component_minimum_offset_factor,
                                                      context.active_component_strength_factor,
-                                                     context.active_component_td_width_factor,
+                                                     td_width_factor,
                                                      context.nonlinear_offset_adjustment,
                                                      context.layer_height_mm,
                                                      stair_step_mm);
