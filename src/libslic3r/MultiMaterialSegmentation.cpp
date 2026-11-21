@@ -2631,7 +2631,9 @@ std::vector<std::vector<ExPolygons>> multi_material_segmentation_by_painting(con
     const size_t num_physical_filaments = print_object.print()->config().filament_diameter.size();
     const size_t num_total_filaments    = print_object.print()->texture_mapping_manager().total_filaments(num_physical_filaments);
     const size_t num_facets_states      = num_total_filaments + 1;
-    const float  max_width          = float(print_object.config().mmu_segmented_region_max_width.value);
+    float        max_width          = float(print_object.config().mmu_segmented_region_max_width.value);
+    if (const float shell_width = print_object.thin_painted_shell_width_mm(); shell_width > 0.f)
+        max_width = max_width > 0.f ? std::min(max_width, shell_width) : shell_width;
     const float  interlocking_depth = float(print_object.config().mmu_segmented_region_interlocking_depth.value);
     const bool   interlocking_beam  = print_object.config().interlocking_beam.value;
 

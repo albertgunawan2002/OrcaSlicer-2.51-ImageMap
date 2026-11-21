@@ -1496,6 +1496,7 @@ static std::vector<std::string> s_Preset_print_options{
     "hole_to_polyhole_max_edges",
     "mmu_segmented_region_max_width",
     "mmu_segmented_region_interlocking_depth",
+    "mmu_segmented_region_walls_only",
     "small_area_infill_flow_compensation",
     "small_area_infill_flow_compensation_model",
     "enable_wrapping_detection",

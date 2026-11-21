@@ -5115,6 +5115,15 @@ void PrintConfigDef::init_fff_params()
     def->mode     = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.));
 
+    def           = this->add("mmu_segmented_region_walls_only", coBool);
+    def->label    = L("Thin painted shell");
+    def->tooltip  = L("Painted and texture-mapped colors only take the outer wall and one backing wall behind it. "
+                      "The walls and infill behind that belong to the object's own filament as one part, so there are "
+                      "no doubled walls where colors meet and no hidden plastic in the painted colors.");
+    def->category = L("Advanced");
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
     def           = this->add("mmu_segmented_region_interlocking_depth", coFloat);
     def->label    = L("Interlocking depth of a segmented region");
     def->tooltip  = L("Interlocking depth of a segmented region. On every other layer, the segmented region "

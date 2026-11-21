@@ -2005,6 +2005,7 @@ bool PrintObject::invalidate_state_by_config_options(
                opt_key == "layer_height"
             || opt_key == "mmu_segmented_region_max_width"
             || opt_key == "mmu_segmented_region_interlocking_depth"
+            || opt_key == "mmu_segmented_region_walls_only"
             || opt_key == "raft_layers"
             || opt_key == "raft_contact_distance"
             || opt_key == "slice_closing_radius"
@@ -5049,6 +5050,27 @@ SlicingParameters PrintObject::slicing_parameters(const DynamicPrintConfig &full
 }
 
 // returns 0-based indices of extruders used to print the object (without brim, support and other helper extrusions)
+float PrintObject::thin_painted_shell_width_mm() const
+{
+    if (!m_config.mmu_segmented_region_walls_only.value)
+        return 0.f;
+    const PrintConfig       &print_config  = this->print()->config();
+    const PrintRegionConfig &region_config = this->print()->default_region_config();
+    const double nozzle = print_config.nozzle_diameter.values.empty() ? 0.4 : print_config.nozzle_diameter.get_at(0);
+    auto width_or = [nozzle](const ConfigOptionFloatOrPercent &opt, double fallback) {
+        const double w = opt.get_abs_value(nozzle);
+        return w > 0. ? w : fallback;
+    };
+    double outer = width_or(region_config.outer_wall_line_width, nozzle * 1.05);
+    // Texture mapping zones print the outer wall up to their maximum line width.
+    const size_t num_physical = print_config.filament_diameter.size();
+    if (this->print()->texture_mapping_manager().total_filaments(num_physical) > num_physical)
+        outer = std::max(outer, print_config.texture_mapping_outer_wall_gradient_max_line_width.value);
+    // Two outer wall widths: the outer wall loop of a strip this wide runs along the surface and comes back along the
+    // strip's inner edge as the backing wall, side by side without overlapping and with no room for anything else.
+    return float(2. * outer);
+}
+
 std::vector<unsigned int> PrintObject::object_extruders() const
 {
     std::vector<unsigned int> extruders;
