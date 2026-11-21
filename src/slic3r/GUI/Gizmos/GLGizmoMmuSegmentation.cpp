@@ -16021,20 +16021,34 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
                          max_tooltip_width);
     m_imgui->disabled_end();
     if (m_show_snap_to_filaments_panel && can_paint_by_color) {
+        // A wide slider plus a number box for typing an exact value; both edit the same setting.
+        auto slider_with_input = [](const char *id, float *value, float min_v, float max_v, const char *format, bool logarithmic) {
+            const float input_width  = 4.f * ImGui::GetFontSize();
+            const float spacing      = ImGui::GetStyle().ItemSpacing.x;
+            const float slider_width = std::max(ImGui::GetContentRegionAvail().x - input_width - spacing, 18.f * ImGui::GetFontSize());
+            ImGui::PushItemWidth(slider_width);
+            ImGui::SliderFloat((std::string("##") + id).c_str(), value, min_v, max_v, format, logarithmic ? ImGuiSliderFlags_Logarithmic : 0);
+            ImGui::PopItemWidth();
+            const bool slider_hovered = ImGui::IsItemHovered();
+            ImGui::SameLine();
+            ImGui::PushItemWidth(input_width);
+            ImGui::InputFloat((std::string("##") + id + "_input").c_str(), value, 0.f, 0.f, format);
+            ImGui::PopItemWidth();
+            *value = std::clamp(*value, min_v, max_v);
+            return slider_hovered || ImGui::IsItemHovered();
+        };
+
         m_imgui->text(_L("Color tolerance"));
-        ImGui::SliderFloat("##snap_tolerance", &m_snap_tolerance, 1.f, 30.f, "%.0f");
-        if (ImGui::IsItemHovered())
+        if (slider_with_input("snap_tolerance", &m_snap_tolerance, 1.f, 30.f, "%.1f", false))
             m_imgui->tooltip(_L("How far a texture color may be from a filament color and still snap to it. "
                                 "2 is barely visible; 8 suits slightly different shades."),
                              max_tooltip_width);
         m_imgui->text(_L("Minimum solid area (mm²)"));
-        ImGui::SliderFloat("##snap_min_solid", &m_snap_min_solid_area_mm2, 0.f, 100.f, "%.1f", ImGuiSliderFlags_Logarithmic);
-        if (ImGui::IsItemHovered())
+        if (slider_with_input("snap_min_solid", &m_snap_min_solid_area_mm2, 0.f, 100.f, "%.1f", true))
             m_imgui->tooltip(_L("Snapped areas smaller than this stay in the texture, so the result has no tiny islands."),
                              max_tooltip_width);
         m_imgui->text(_L("Minimum texture area (mm²)"));
-        ImGui::SliderFloat("##snap_min_texture", &m_snap_min_texture_area_mm2, 0.f, 100.f, "%.1f", ImGuiSliderFlags_Logarithmic);
-        if (ImGui::IsItemHovered())
+        if (slider_with_input("snap_min_texture", &m_snap_min_texture_area_mm2, 0.f, 100.f, "%.1f", true))
             m_imgui->tooltip(_L("Texture spots smaller than this inside a solid area take that area's filament, so a slightly "
                                 "off-color spot does not need its own tool changes."),
                              max_tooltip_width);
