@@ -572,6 +572,8 @@ set(lisbslic3r_sources
     TriangleSetSampling.hpp
     TextureMappingOffset.cpp
     TextureMappingOffset.hpp
+    TextureMappingSnap.cpp
+    TextureMappingSnap.hpp
     TextureMappingContoning.cpp
     TextureMappingContoning.hpp
     TextureMapping.cpp

@@ -396,6 +396,20 @@ public:
 
     // Set facet of the mesh to a given state. Only works for original triangles.
     void set_facet(int facet_idx, EnforcerBlockerType state);
+    // State of an original (unsubdivided-index) triangle. Returns NONE and sets is_split when the triangle is
+    // subdivided into differently painted pieces.
+    EnforcerBlockerType get_original_facet_state(int facet_idx, bool &is_split) const
+    {
+        is_split = false;
+        if (facet_idx < 0 || facet_idx >= m_orig_size_indices || size_t(facet_idx) >= m_triangles.size())
+            return EnforcerBlockerType::NONE;
+        const Triangle &tr = m_triangles[size_t(facet_idx)];
+        if (tr.is_split()) {
+            is_split = true;
+            return EnforcerBlockerType::NONE;
+        }
+        return tr.get_state();
+    }
     bool apply_state_by_world_normal(const Transform3d &trafo_no_translate,
                                      EnforcerBlockerType new_state,
                                      const std::function<bool(EnforcerBlockerType, float)> &predicate,

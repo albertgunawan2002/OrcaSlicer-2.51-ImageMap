@@ -1,4 +1,5 @@
 #include "GLGizmoMmuSegmentation.hpp"
+#include "libslic3r/TextureMappingSnap.hpp"
 #include "slic3r/GUI/PartPlate.hpp"
 #include "slic3r/GUI/Shortcuts.hpp"
 #include "GLGizmoUtils.hpp"
@@ -16011,6 +16012,38 @@ void GLGizmoMmuSegmentation::on_render_input_window(float x, float y, float bott
     }
     m_imgui->disabled_end();
 
+    m_imgui->disabled_begin(!can_paint_by_color);
+    if (m_imgui->button(_L("Snap colors to filaments")))
+        m_show_snap_to_filaments_panel = !m_show_snap_to_filaments_panel;
+    if (ImGui::IsItemHovered())
+        m_imgui->tooltip(_L("Paint the parts of the texture that are already close to one of the filament colors with that "
+                            "filament, so they print solid instead of in the texture mapping layer cycle."),
+                         max_tooltip_width);
+    m_imgui->disabled_end();
+    if (m_show_snap_to_filaments_panel && can_paint_by_color) {
+        m_imgui->text(_L("Color tolerance"));
+        ImGui::SliderFloat("##snap_tolerance", &m_snap_tolerance, 1.f, 30.f, "%.0f");
+        if (ImGui::IsItemHovered())
+            m_imgui->tooltip(_L("How far a texture color may be from a filament color and still snap to it. "
+                                "2 is barely visible; 8 suits slightly different shades."),
+                             max_tooltip_width);
+        m_imgui->text(_L("Minimum solid area (mm²)"));
+        ImGui::SliderFloat("##snap_min_solid", &m_snap_min_solid_area_mm2, 0.f, 100.f, "%.1f", ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered())
+            m_imgui->tooltip(_L("Snapped areas smaller than this stay in the texture, so the result has no tiny islands."),
+                             max_tooltip_width);
+        m_imgui->text(_L("Minimum texture area (mm²)"));
+        ImGui::SliderFloat("##snap_min_texture", &m_snap_min_texture_area_mm2, 0.f, 100.f, "%.1f", ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered())
+            m_imgui->tooltip(_L("Texture spots smaller than this inside a solid area take that area's filament, so a slightly "
+                                "off-color spot does not need its own tool changes."),
+                             max_tooltip_width);
+        m_imgui->push_confirm_button_style();
+        if (m_imgui->bbl_button(_L("Snap")))
+            apply_snap_to_filaments();
+        m_imgui->pop_confirm_button_style();
+    }
+
     ImGui::Separator();
 
     const bool has_painted_regions = selected_object_has_painted_regions();
@@ -22478,6 +22511,54 @@ void GLGizmoMmuSegmentation::remap_filament_assignments()
         wxGetApp().sidebar().update_texture_mapping_panel(false);
         m_parent.set_as_dirty();
     }
+}
+
+void GLGizmoMmuSegmentation::apply_snap_to_filaments()
+{
+    ModelObject *mo = m_c->selection_info()->model_object();
+    if (mo == nullptr || m_triangle_selectors.empty())
+        return;
+    const Selection &selection = m_parent.get_selection();
+    if (selection.get_instance_idx() < 0 || selection.get_instance_idx() >= int(mo->instances.size()))
+        return;
+
+    const size_t num_physical = size_t(std::max(wxGetApp().filaments_cnt(), 0));
+    const std::vector<ColorRGBA> colors = get_extruders_colors();
+    std::vector<std::array<float, 3>> filament_rgb;
+    for (size_t i = 0; i < num_physical && i < colors.size(); ++i)
+        filament_rgb.push_back({ colors[i].r(), colors[i].g(), colors[i].b() });
+    if (filament_rgb.empty())
+        return;
+
+    TextureSnapToFilamentsParams params;
+    params.tolerance_delta_e = m_snap_tolerance * 0.01f;
+    params.min_solid_area_mm2 = m_snap_min_solid_area_mm2;
+    params.min_texture_area_mm2 = m_snap_min_texture_area_mm2;
+
+    const Transform3d instance_trafo = mo->instances[selection.get_instance_idx()]->get_transformation().get_matrix_no_offset();
+    Plater::TakeSnapshot snapshot(wxGetApp().plater(), "Snap colors to filaments", UndoRedo::SnapshotType::GizmoAction);
+    size_t snapped = 0;
+    int selector_idx = -1;
+    for (const ModelVolume *mv : mo->volumes) {
+        if (!mv->is_model_part())
+            continue;
+        ++selector_idx;
+        if (size_t(selector_idx) >= m_triangle_selectors.size() || m_triangle_selectors[size_t(selector_idx)] == nullptr)
+            continue;
+        const TextureSnapToFilamentsResult result =
+            snap_texture_colors_to_filaments(*mv, *m_triangle_selectors[size_t(selector_idx)], instance_trafo * mv->get_matrix_no_offset(),
+                                             filament_rgb, mv->extruder_id(), params);
+        snapped += result.snapped_triangles;
+        m_triangle_selectors[size_t(selector_idx)]->request_update_render_data(true);
+    }
+
+    if (snapped > 0) {
+        update_model_object();
+        m_parent.set_as_dirty();
+    }
+    wxGetApp().plater()->get_notification_manager()->push_notification(
+        snapped > 0 ? _L("Texture areas close to a filament color were painted with that filament.").ToStdString() :
+                      _L("No texture area was close enough to a filament color. Try a higher color tolerance.").ToStdString());
 }
 
 } // namespace Slic3r

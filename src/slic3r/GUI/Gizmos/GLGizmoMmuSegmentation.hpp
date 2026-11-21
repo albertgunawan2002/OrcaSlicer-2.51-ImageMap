@@ -300,6 +300,12 @@ private:
     ColorAutoPaintSettings m_color_auto_paint_settings;
     ColorAutoPaintSettings m_color_auto_paint_preview_settings;
     bool m_show_color_auto_paint_overlay = false;
+    // "Snap colors to filaments": texture areas already close to a filament colour become plain painted regions.
+    bool  m_show_snap_to_filaments_panel = false;
+    float m_snap_tolerance = 8.f;          // Oklab distance x 100
+    float m_snap_min_solid_area_mm2 = 4.f;
+    float m_snap_min_texture_area_mm2 = 4.f;
+    void  apply_snap_to_filaments();
     bool m_color_auto_paint_overlay_positioned = false;
     bool m_color_auto_paint_preview_active = false;
     bool m_color_auto_paint_picker_active = false;
