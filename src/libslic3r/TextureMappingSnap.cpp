@@ -224,8 +224,9 @@ TextureSnapToFilamentsResult snap_texture_colors_to_filaments(const ModelVolume 
         ++result.candidate_triangles;
         if (samples[t].empty())
             continue;
-        // Snap when at least three quarters of the samples are within tolerance of the same filament. Requiring every
-        // sample left speckles wherever a single texel of shading or highlight fell on a triangle.
+        // Snap only when every sample is within tolerance of the same filament. A looser majority rule also snapped
+        // triangles on the edges of narrow features (trim, piping) and broke them into fragments that print as beads;
+        // speckles inside solid areas are cleaned up by the minimum texture area instead.
         std::vector<int> votes(size_t(num_physical) + 1, 0);
         for (const RGB &rgb : samples[t]) {
             const Lab lab = to_oklab(rgb);
@@ -242,7 +243,7 @@ TextureSnapToFilamentsResult snap_texture_colors_to_filaments(const ModelVolume 
                 ++votes[size_t(nearest)];
         }
         const auto best = std::max_element(votes.begin() + 1, votes.end());
-        if (*best > 0 && 4 * *best >= 3 * int(samples[t].size()))
+        if (*best > 0 && *best == int(samples[t].size()))
             label[t] = int(best - votes.begin());
     }
 
