@@ -1057,6 +1057,11 @@ public:
     TextureMappingZone *add_zone(size_t num_physical,
                                  const std::vector<std::string> &filament_colours,
                                  int surface_pattern = int(TextureMappingZone::ImageTexture));
+    // User defaults for new zones: the settings of a saved zone, as serialize_entries() wrote it. add_zone() starts a
+    // new zone of the same surface pattern from these settings, keeping only its own identity and filament selection.
+    static void               set_new_zone_defaults(std::string serialized_entries);
+    static const std::string &new_zone_defaults();
+    static std::string        serialize_zone_as_defaults(const TextureMappingZone &zone, const std::vector<std::string> &filament_colours);
     bool duplicate_zone(size_t zone_index,
                         size_t num_physical,
                         const std::vector<std::string> &filament_colours);
@@ -1130,6 +1135,7 @@ public:
     std::vector<TextureMappingZone>       &zones()       { return m_zones; }
 
 private:
+    static void apply_new_zone_defaults(TextureMappingZone &zone, const std::vector<std::string> &filament_colours);
     uint64_t allocate_stable_id();
     uint64_t normalize_stable_id(uint64_t stable_id);
 

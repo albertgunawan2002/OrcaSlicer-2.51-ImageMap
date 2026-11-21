@@ -2666,12 +2666,75 @@ TextureMappingZone *TextureMappingManager::add_zone(size_t num_physical,
         zone.component_ids = encode_component_ids(linear_gradient_component_ids_from_stops(zone, num_physical));
     }
     zone.display_color = random_display_color(zone.stable_id);
+    apply_new_zone_defaults(zone, filament_colours);
     if (zone.is_image_texture())
         auto_adjust_texture_component_ids(zone, num_physical, filament_colours);
 
     m_zones.emplace_back(std::move(zone));
     refresh(filament_colours);
     return &m_zones.back();
+}
+
+static std::string &new_zone_defaults_storage()
+{
+    static std::string defaults;
+    return defaults;
+}
+
+void TextureMappingManager::set_new_zone_defaults(std::string serialized_entries)
+{
+    new_zone_defaults_storage() = std::move(serialized_entries);
+}
+
+const std::string &TextureMappingManager::new_zone_defaults() { return new_zone_defaults_storage(); }
+
+std::string TextureMappingManager::serialize_zone_as_defaults(const TextureMappingZone &zone, const std::vector<std::string> &filament_colours)
+{
+    TextureMappingManager single;
+    single.m_zones.push_back(zone);
+    single.m_zones.back().deleted = false;
+    single.m_filament_colours = filament_colours;
+    return single.serialize_entries();
+}
+
+void TextureMappingManager::apply_new_zone_defaults(TextureMappingZone &zone, const std::vector<std::string> &filament_colours)
+{
+    const std::string &defaults = new_zone_defaults();
+    if (defaults.empty())
+        return;
+    TextureMappingManager parsed;
+    try {
+        parsed.load_entries(defaults, filament_colours);
+    } catch (...) {
+        return;
+    }
+    const TextureMappingZone *saved = nullptr;
+    for (const TextureMappingZone &candidate : parsed.m_zones)
+        if (!candidate.deleted && candidate.surface_pattern == zone.surface_pattern) {
+            saved = &candidate;
+            break;
+        }
+    if (saved == nullptr)
+        return;
+
+    // Everything comes from the saved zone except what identifies this zone and which filaments it uses.
+    const TextureMappingZone own = zone;
+    zone = *saved;
+    zone.stable_id             = own.stable_id;
+    zone.zone_id               = own.zone_id;
+    zone.enabled               = own.enabled;
+    zone.deleted               = own.deleted;
+    zone.surface_pattern       = own.surface_pattern;
+    zone.component_a           = own.component_a;
+    zone.component_b           = own.component_b;
+    zone.component_ids         = own.component_ids;
+    zone.component_weights     = own.component_weights;
+    zone.offset_distances      = own.offset_distances;
+    zone.offset_angles         = own.offset_angles;
+    zone.display_color         = own.display_color;
+    zone.linear_gradient_start = own.linear_gradient_start;
+    zone.linear_gradient_end   = own.linear_gradient_end;
+    zone.linear_gradient_stops = own.linear_gradient_stops;
 }
 
 bool TextureMappingManager::duplicate_zone(size_t zone_index,

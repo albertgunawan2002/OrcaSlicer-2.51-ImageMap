@@ -95,6 +95,7 @@ add_executable(${_TEST_NAME}_tests
     test_texture_displacement.cpp
     test_texture_import.cpp
     test_texture_mapping_snap.cpp
+    test_texture_mapping_defaults.cpp
     test_instance_lock.cpp
     ../libnest2d/printer_parts.cpp
     )

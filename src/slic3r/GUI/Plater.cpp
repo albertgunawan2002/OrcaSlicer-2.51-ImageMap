@@ -4145,8 +4145,19 @@ public:
         if (m_options_book)
             m_options_book->SetSelection(std::clamp(initial_options_tab, 0, 6));
         root->Add(m_options_book, 0, wxEXPAND | wxLEFT | wxRIGHT | wxBOTTOM, gap);
+        auto *button_row = new wxBoxSizer(wxHORIZONTAL);
+        auto *save_default_btn = new wxButton(this, wxID_ANY, _L("Save as default"));
+        save_default_btn->SetToolTip(_L("Apply these settings and use them as the starting settings for every new texture mapping zone, "
+                                        "in this and future projects. Filament selection is not included."));
+        save_default_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent &) {
+            m_save_as_default = true;
+            EndModal(wxID_OK);
+        });
+        button_row->Add(save_default_btn, 0, wxALIGN_CENTER_VERTICAL);
+        button_row->AddStretchSpacer();
         if (wxSizer *buttons = CreateStdDialogButtonSizer(wxOK | wxCANCEL))
-            root->Add(buttons, 0, wxEXPAND | wxALL, gap);
+            button_row->Add(buttons, 0, wxALIGN_CENTER_VERTICAL);
+        root->Add(button_row, 0, wxEXPAND | wxALL, gap);
         SetSizerAndFit(root);
         SetMinSize(wxSize(FromDIP(420), GetBestSize().GetHeight()));
         CentreOnParent();
@@ -4663,6 +4674,7 @@ public:
     const TextureMappingPrimeTowerImage& prime_tower_image() const { return m_prime_tower_image; }
     const TextureMappingPrimeTowerImage& prime_tower_image_back() const { return m_prime_tower_image_back; }
     int selected_options_tab() const { return std::clamp(m_options_tab_choice ? m_options_tab_choice->GetSelection() : 0, 0, 6); }
+    bool save_as_default() const { return m_save_as_default; }
     bool strength_offsets_expanded() const { return m_strength_offsets_expanded; }
 
     std::vector<float> component_strengths_pct() const
@@ -4695,6 +4707,7 @@ public:
     }
 
 private:
+    bool m_save_as_default { false };
     enum class CalibrationSurface {
         Top,
         Side
@@ -14105,6 +14118,14 @@ void Sidebar::update_texture_mapping_panel(bool sync_manager)
             while (!updated.filament_transmission_distances_mm.empty() &&
                    std::abs(updated.filament_transmission_distances_mm.back()) <= 1e-6f)
                 updated.filament_transmission_distances_mm.pop_back();
+            if (dlg.save_as_default()) {
+                const std::string defaults = TextureMappingManager::serialize_zone_as_defaults(updated, physical_colors);
+                TextureMappingManager::set_new_zone_defaults(defaults);
+                wxGetApp().app_config->set("texture_mapping_zone_defaults", defaults);
+                wxGetApp().app_config->save();
+                wxGetApp().plater()->get_notification_manager()->push_notification(
+                    _u8L("Saved as the default for new texture mapping zones."));
+            }
             const bool affects_scene = apply_zone(std::move(updated));
             const bool prime_tower_preview_changed = prime_tower_settings_changed || prime_tower_images_changed;
             if (global_settings_changed || prime_tower_images_changed)
@@ -15610,6 +15631,8 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
     , partplate_list(this->q, &model)
 {
     m_is_dark = wxGetApp().app_config->get("dark_color_mode") == "1";
+    // Settings the user saved with "Save as default" in the texture mapping options; new zones start from them.
+    TextureMappingManager::set_new_zone_defaults(wxGetApp().app_config->get("texture_mapping_zone_defaults"));
 
     m_aui_mgr.init(q);
 
