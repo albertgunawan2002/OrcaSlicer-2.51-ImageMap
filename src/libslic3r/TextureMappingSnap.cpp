@@ -224,8 +224,9 @@ TextureSnapToFilamentsResult snap_texture_colors_to_filaments(const ModelVolume 
         ++result.candidate_triangles;
         if (samples[t].empty())
             continue;
-        int  best = 0;
-        bool agree = true;
+        // Snap when at least three quarters of the samples are within tolerance of the same filament. Requiring every
+        // sample left speckles wherever a single texel of shading or highlight fell on a triangle.
+        std::vector<int> votes(size_t(num_physical) + 1, 0);
         for (const RGB &rgb : samples[t]) {
             const Lab lab = to_oklab(rgb);
             int   nearest = 0;
@@ -237,14 +238,12 @@ TextureSnapToFilamentsResult snap_texture_colors_to_filaments(const ModelVolume 
                     nearest = f + 1;
                 }
             }
-            if (nearest_d > params.tolerance_delta_e || (best != 0 && nearest != best)) {
-                agree = false;
-                break;
-            }
-            best = nearest;
+            if (nearest_d <= params.tolerance_delta_e)
+                ++votes[size_t(nearest)];
         }
-        if (agree && best > 0)
-            label[t] = best;
+        const auto best = std::max_element(votes.begin() + 1, votes.end());
+        if (*best > 0 && 4 * *best >= 3 * int(samples[t].size()))
+            label[t] = int(best - votes.begin());
     }
 
     std::vector<float> area(n, 0.f);
@@ -305,22 +304,26 @@ TextureSnapToFilamentsResult snap_texture_colors_to_filaments(const ModelVolume 
         for_each_patch([](int l) { return l == 0; }, [&](const std::vector<size_t> &patch, float patch_area) {
             if (patch_area >= params.min_texture_area_mm2)
                 return;
+            // Only patches mostly enclosed by solid colour join it; one that mostly borders other texture paint (split
+            // triangles, painted texture) is a real texture area.
             std::map<int, int> edges_per_filament;
-            bool touches_large_texture = false;
+            int solid_edges = 0;
+            int other_edges = 0;
             for (size_t t : patch)
                 for (int k = 0; k < 3; ++k) {
                     const int nb = neighbors[t][k];
                     if (nb < 0 || size_t(nb) >= n)
                         continue;
                     const int nl = label[size_t(nb)];
-                    if (nl > 0)
-                        ++edges_per_filament[nl];
-                    else if (nl < 0 && fixed_filament[size_t(nb)] > 0)
-                        ++edges_per_filament[fixed_filament[size_t(nb)]];
-                    else if (nl < 0)
-                        touches_large_texture = true; // split or other non-candidate texture paint
+                    const int solid = nl > 0 ? nl : (nl < 0 ? fixed_filament[size_t(nb)] : 0);
+                    if (solid > 0) {
+                        ++edges_per_filament[solid];
+                        ++solid_edges;
+                    } else if (nl < 0) {
+                        ++other_edges;
+                    }
                 }
-            if (edges_per_filament.empty() || touches_large_texture)
+            if (edges_per_filament.empty() || 4 * solid_edges < 3 * (solid_edges + other_edges))
                 return;
             const auto best = std::max_element(edges_per_filament.begin(), edges_per_filament.end(),
                                                [](const auto &a, const auto &b) { return a.second < b.second; });
