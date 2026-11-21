@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
@@ -95,11 +96,13 @@ TEST_CASE("A volume printed with a physical filament is not touched", "[TextureM
 
 TEST_CASE("Small patches follow the minimum areas", "[TextureMappingSnap]")
 {
-    // Top face (z = 20) red, everything else green: the top is 400 mm^2 of red, the rest stays texture.
+    // Top face red, everything else green: the top is 400 mm^2 of red, the rest stays texture. add_volume() centres
+    // the mesh, so the top face is at z = +10.
     Model        model;
     ModelVolume *volume = make_colored_cube(model, [](const stl_vertex &v) {
-        return v.z() > 19.f ? pack_rgba(250, 0, 0) : pack_rgba(40, 200, 40);
+        return v.z() > 9.f ? pack_rgba(250, 0, 0) : pack_rgba(40, 200, 40);
     });
+    REQUIRE(volume->mesh().bounding_box().max.z() == Catch::Approx(10.).margin(1e-3));
     const indexed_triangle_set &its = volume->mesh().its;
 
     SECTION("a solid patch below the minimum solid area goes back to the texture") {
