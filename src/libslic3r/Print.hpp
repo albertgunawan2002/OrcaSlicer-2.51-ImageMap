@@ -520,8 +520,8 @@ public:
     bool                        is_mm_painted()         const { return this->model_object()->is_mm_painted(); }
     // Checks if the model object is painted using the fuzzy skin painting gizmo.
     bool                        is_fuzzy_skin_painted() const { return this->model_object()->is_fuzzy_skin_painted(); }
-    // Width (mm) a painted color region is limited to with "Thin painted shell": the outer wall plus one backing wall.
-    // 0 when the option is off.
+    // Width (mm) painted color regions are limited to (mmu_segmented_region_max_width); the regions next to them then
+    // continue their walls behind them instead of doubling them. 0 when not limited.
     float                       thin_painted_shell_width_mm() const;
 
     // returns 0-based indices of extruders used to print the object (without brim, support and other helper extrusions)

@@ -5332,21 +5332,16 @@ void PrintConfigDef::init_fff_params()
 
     def           = this->add("mmu_segmented_region_max_width", coFloat);
     def->label    = L("Maximum width of a segmented region");
-    def->tooltip  = L("Maximum width of a segmented region. A value of 0 disables this feature.");
+    def->tooltip  = L("Maximum width of a segmented region. Painted and texture-mapped colors reach no deeper than "
+                      "this from the surface, and the walls and infill behind them belong to the object's own filament "
+                      "as one part, with no doubled walls where the colors meet. About two outer wall widths keeps "
+                      "just the outer wall and one backing wall in the painted color. A value of 0 disables this "
+                      "feature.");
     def->sidetext = L("mm");	// millimeters, CIS languages need translation
     def->min      = 0;
     def->category = L("Advanced");
     def->mode     = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(0.));
-
-    def           = this->add("mmu_segmented_region_walls_only", coBool);
-    def->label    = L("Thin painted shell");
-    def->tooltip  = L("Painted and texture-mapped colors only take the outer wall and one backing wall behind it. "
-                      "The walls and infill behind that belong to the object's own filament as one part, so there are "
-                      "no doubled walls where colors meet and no hidden plastic in the painted colors.");
-    def->category = L("Advanced");
-    def->mode     = comAdvanced;
-    def->set_default_value(new ConfigOptionBool(false));
 
     def           = this->add("mmu_segmented_region_interlocking_depth", coFloat);
     def->label    = L("Interlocking depth of a segmented region");
@@ -10299,6 +10294,8 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
 
     // Ignore the following obsolete configuration keys:
     static std::set<std::string> ignore = {
+        // ImageMap: "Thin painted shell" became the behaviour of mmu_segmented_region_max_width.
+        "mmu_segmented_region_walls_only",
         "acceleration", "scale", "rotate", "duplicate", "duplicate_grid",
         "bed_size",
         "print_center", "g0", "wipe_tower_per_color_wipe", 

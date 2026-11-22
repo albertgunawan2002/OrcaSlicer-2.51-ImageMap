@@ -415,8 +415,8 @@ static void remove_extrusions_over(ExtrusionEntityCollection &collection, const 
     collection.entities = std::move(kept);
 }
 
-// ImageMap: "Thin painted shell". Segmentation limits every painted colour region to a strip two outer walls wide
-// along the surface (PrintObject::thin_painted_shell_width_mm()). These are the islands of each region that are such
+// ImageMap: with a maximum segmented region width, segmentation limits every painted colour region to a strip that
+// wide along the surface (PrintObject::thin_painted_shell_width_mm()). These are the islands of each region that are such
 // strips, indexed like layer.regions(). The regions next to them generate their walls over them and drop what lands
 // there, so the strip's own outer wall loop is the only wall it has.
 static std::vector<ExPolygons> thin_painted_shell_islands(const Layer &layer, float shell_width_mm)
@@ -435,17 +435,24 @@ static std::vector<ExPolygons> thin_painted_shell_islands(const Layer &layer, fl
 // The outer wall loop of a shell strip runs along the surface and comes back along the strip's inner edge. That
 // returning side is a backing wall nobody sees: make it a plain perimeter, so that no texture modulation or outer wall
 // treatment is applied to it.
-static void demote_shell_backing_walls(ExtrusionEntityCollection &collection, const ExPolygons &shells, const ExPolygons &outline_zone)
+// The layer outline eroded by half a wall of the given width plus a margin: a point of an outer wall of that width
+// inside it is not running along the surface. Cached per width, rounded to 0.05 mm.
+using ShellInteriorCache = std::map<int, ExPolygons>;
+static const ExPolygons &shell_wall_interior(const ExPolygons &lslices, float width_mm, ShellInteriorCache &cache)
+{
+    const int key = int(std::lround(width_mm * 20.f));
+    auto it = cache.find(key);
+    if (it == cache.end())
+        it = cache.emplace(key, offset_ex(lslices, -float(scale_(0.5 * double(key) / 20. + 0.15)))).first;
+    return it->second;
+}
+
+static void demote_shell_backing_walls(ExtrusionEntityCollection &collection, const ExPolygons &shells, const ExPolygons &lslices,
+                                       ShellInteriorCache &interior_cache)
 {
     const BoundingBox shells_bbox = get_extents(shells);
-    auto is_backing = [&](const Point3 &p3) {
-        const Point p(p3.x(), p3.y());
-        if (!shells_bbox.contains(p))
-            return false;
-        const auto inside = [&p](const ExPolygons &expolys) {
-            return std::any_of(expolys.begin(), expolys.end(), [&p](const ExPolygon &e) { return e.contains(p); });
-        };
-        return inside(shells) && !inside(outline_zone);
+    const auto inside = [](const ExPolygons &expolys, const Point &p) {
+        return std::any_of(expolys.begin(), expolys.end(), [&p](const ExPolygon &e) { return e.contains(p); });
     };
     auto split = [&](const ExtrusionPath &path, ExtrusionPaths &out) {
         const Points3 &pts = path.polyline.points;
@@ -453,6 +460,11 @@ static void demote_shell_backing_walls(ExtrusionEntityCollection &collection, co
             out.emplace_back(path);
             return false;
         }
+        const ExPolygons &interior = shell_wall_interior(lslices, path.width, interior_cache);
+        auto is_backing = [&](const Point3 &p3) {
+            const Point p(p3.x(), p3.y());
+            return shells_bbox.contains(p) && inside(shells, p) && inside(interior, p);
+        };
         bool   changed = false;
         size_t start   = 0;
         bool   backing = is_backing(pts.front());
@@ -480,7 +492,7 @@ static void demote_shell_backing_walls(ExtrusionEntityCollection &collection, co
     };
     for (ExtrusionEntity *&entity : collection.entities) {
         if (auto *child = dynamic_cast<ExtrusionEntityCollection *>(entity)) {
-            demote_shell_backing_walls(*child, shells, outline_zone);
+            demote_shell_backing_walls(*child, shells, lslices, interior_cache);
         } else if (auto *loop = dynamic_cast<ExtrusionLoop *>(entity)) {
             ExtrusionPaths paths;
             for (const ExtrusionPath &path : loop->paths)
@@ -685,11 +697,11 @@ void Layer::make_perimeters()
         ExPolygons shells;
         for (const ExPolygons &islands : shell_islands)
             append(shells, islands);
-        // Points of the strip's outer wall run within about half its width of the surface; the returning side is a
-        // full outer wall width further in.
-        const ExPolygons outline_zone = diff_ex(lslices, offset_ex(lslices, -float(scale_(0.25 * double(shell_width_mm) + 0.15))));
+        // An outer wall running along the surface lies within half its width of it; the side of a strip's wall loop
+        // that returns along the strip's inner edge lies further in.
+        ShellInteriorCache interior_cache;
         for (LayerRegion *layerm : m_regions)
-            demote_shell_backing_walls(layerm->perimeters, shells, outline_zone);
+            demote_shell_backing_walls(layerm->perimeters, shells, lslices, interior_cache);
     }
     BOOST_LOG_TRIVIAL(trace) << "Generating perimeters for layer " << this->id() << " - Done";
 }

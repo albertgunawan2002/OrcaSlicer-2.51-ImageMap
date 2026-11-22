@@ -130,16 +130,16 @@ void collect_paths(const ExtrusionEntityCollection &collection, std::vector<cons
 
 } // namespace
 
-TEST_CASE("Thin painted shell keeps a painted side to its outer and backing wall", "[MultiMaterialSegmentation]")
+TEST_CASE("A maximum segmented region width keeps a painted side to a strip without doubled walls", "[MultiMaterialSegmentation]")
 {
-    const bool walls_only = GENERATE(false, true);
+    const bool walls_only = GENERATE(false, true); // whether a maximum width is set
     CAPTURE(walls_only);
 
     DynamicPrintConfig config = Test::multifilament_config(2, {
         {"layer_height", "0.2"},
         {"initial_layer_print_height", "0.2"},
         {"wall_loops", "2"},
-        {"mmu_segmented_region_walls_only", walls_only ? "1" : "0"},
+        {"mmu_segmented_region_max_width", walls_only ? "0.9" : "0"},
         {"gcode_comments", "1"},
     });
 
