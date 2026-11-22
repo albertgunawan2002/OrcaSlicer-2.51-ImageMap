@@ -810,6 +810,7 @@ PresetBundle& PresetBundle::operator=(const PresetBundle &rhs)
     vendors             = rhs.vendors;
     obsolete_presets    = rhs.obsolete_presets;
     m_errors    = rhs.m_errors;
+    m_system_override_originals = rhs.m_system_override_originals;
 
     // Adjust Preset::vendor pointers to point to the copied vendors map.
     prints       .update_vendor_ptrs_after_copy(this->vendors);
@@ -927,6 +928,9 @@ PresetsConfigSubstitutions PresetBundle::load_presets(AppConfig &config, Forward
     std::tie(substitutions, errors_cummulative) = this->load_system_presets_from_json(substitution_rule, !read_only);
     if (errors != nullptr)
         *errors = errors_cummulative;
+
+    // ImageMap: user edits saved into stock presets, applied before the user presets inherit them.
+    this->load_system_preset_overrides();
 
     // BBS load preset from user's folder, load system default if
     // BBS: change directories by design
@@ -3722,6 +3726,232 @@ void PresetBundle::load_installed_printers(const AppConfig &config)
         preset.set_visible_from_appconfig(config);
 }
 
+// ---------------------------------------------------------------------------------------------
+// ImageMap Preset Manager
+// ---------------------------------------------------------------------------------------------
+const char* PresetBundle::HIDDEN_PRESETS_SECTION = "imagemap_hidden_presets";
+
+std::string PresetBundle::hidden_preset_key(Preset::Type type, const std::string &name)
+{
+    return Preset::get_type_string(type) + ":" + name;
+}
+
+bool PresetBundle::is_preset_hidden(const AppConfig &config, Preset::Type type, const std::string &name)
+{
+    return config.get(HIDDEN_PRESETS_SECTION, hidden_preset_key(type, name)) == "1";
+}
+
+PresetCollection* PresetBundle::collection_for_type(Preset::Type type)
+{
+    switch (type) {
+    case Preset::TYPE_PRINT:        return &prints;
+    case Preset::TYPE_FILAMENT:     return &filaments;
+    case Preset::TYPE_PRINTER:      return &printers;
+    case Preset::TYPE_SLA_PRINT:    return &sla_prints;
+    case Preset::TYPE_SLA_MATERIAL: return &sla_materials;
+    default:                        return nullptr;
+    }
+}
+
+void PresetBundle::apply_hidden_presets(const AppConfig &config)
+{
+    if (!config.has_section(HIDDEN_PRESETS_SECTION))
+        return;
+    const std::map<std::string, std::string> &hidden = config.get_section(HIDDEN_PRESETS_SECTION);
+    if (hidden.empty())
+        return;
+    for (Preset::Type type : { Preset::TYPE_PRINT, Preset::TYPE_FILAMENT, Preset::TYPE_PRINTER }) {
+        PresetCollection *collection = this->collection_for_type(type);
+        const size_t      selected   = collection->get_selected_idx();
+        size_t            idx        = 0;
+        for (Preset &preset : *collection) {
+            if (idx != selected && !preset.is_default) {
+                auto it = hidden.find(hidden_preset_key(type, preset.name));
+                if (it != hidden.end() && it->second == "1")
+                    preset.is_visible = false;
+            }
+            ++idx;
+        }
+    }
+}
+
+std::string PresetBundle::system_overrides_dir()
+{
+    return (boost::filesystem::path(data_dir()) / "imagemap_system_overrides").make_preferred().string();
+}
+
+namespace {
+// Options that identify a preset rather than configure it; never written into an override.
+bool imagemap_override_skips_key(const std::string &key)
+{
+    static const std::set<std::string> skipped = {
+        "inherits", "print_settings_id", "filament_settings_id", "printer_settings_id",
+        "from", "version", "setting_id", "instantiation", "filament_id", "base_id"
+    };
+    return skipped.count(key) > 0;
+}
+
+std::string imagemap_override_file_name(const std::string &name)
+{
+    std::string out;
+    for (char c : name) {
+        const unsigned char u = static_cast<unsigned char>(c);
+        out.push_back((std::isalnum(u) || c == '-' || c == '_' || c == '.') ? c : '_');
+    }
+    if (out.size() > 80)
+        out.resize(80);
+    char hash[20];
+    snprintf(hash, sizeof(hash), "_%08x", static_cast<unsigned int>(std::hash<std::string>{}(name) & 0xffffffffu));
+    return out + hash + ".json";
+}
+} // namespace
+
+void PresetBundle::load_system_preset_overrides()
+{
+    m_system_override_originals.clear();
+    namespace bfs = boost::filesystem;
+    const bfs::path root(system_overrides_dir());
+    boost::system::error_code ec;
+    if (!bfs::is_directory(root, ec))
+        return;
+    for (Preset::Type type : { Preset::TYPE_PRINT, Preset::TYPE_FILAMENT, Preset::TYPE_PRINTER }) {
+        const bfs::path dir = root / Preset::get_type_string(type);
+        if (!bfs::is_directory(dir, ec))
+            continue;
+        PresetCollection *collection = this->collection_for_type(type);
+        for (bfs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec)) {
+            if (it->path().extension() != ".json")
+                continue;
+            try {
+                boost::nowide::ifstream in(it->path().string());
+                json j = json::parse(in);
+                const std::string name = j.value("name", std::string());
+                Preset *preset = collection->find_preset(name, false);
+                if (preset == nullptr || !preset->is_system || preset->name != name) {
+                    BOOST_LOG_TRIVIAL(warning) << "ImageMap override " << it->path().string() << ": stock preset '" << name << "' not found";
+                    continue;
+                }
+                const std::string key = hidden_preset_key(type, name);
+                if (m_system_override_originals.find(key) == m_system_override_originals.end())
+                    m_system_override_originals.emplace(key, preset->config);
+                ConfigSubstitutionContext context(ForwardCompatibilitySubstitutionRule::EnableSilent);
+                if (j.contains("options") && j["options"].is_object()) {
+                    for (auto opt = j["options"].begin(); opt != j["options"].end(); ++opt) {
+                        if (!opt.value().is_string() || imagemap_override_skips_key(opt.key()) || !preset->config.has(opt.key()))
+                            continue;
+                        try {
+                            preset->config.set_deserialize(opt.key(), opt.value().get<std::string>(), context);
+                        } catch (const std::exception &err) {
+                            BOOST_LOG_TRIVIAL(warning) << "ImageMap override " << name << ": option " << opt.key() << ": " << err.what();
+                        }
+                    }
+                }
+                BOOST_LOG_TRIVIAL(info) << "ImageMap: applied stock preset override for " << key;
+            } catch (const std::exception &err) {
+                BOOST_LOG_TRIVIAL(error) << "ImageMap override " << it->path().string() << ": " << err.what();
+            }
+        }
+    }
+}
+
+bool PresetBundle::has_system_preset_override(Preset::Type type, const std::string &name) const
+{
+    return m_system_override_originals.find(hidden_preset_key(type, name)) != m_system_override_originals.end();
+}
+
+std::string PresetBundle::save_system_preset_override(Preset::Type type)
+{
+    PresetCollection *collection = this->collection_for_type(type);
+    if (collection == nullptr)
+        return "Unsupported preset type.";
+    Preset &selected = collection->get_selected_preset();
+    Preset &edited   = collection->get_edited_preset();
+    if (!selected.is_system)
+        return "The selected preset is not a stock preset.";
+    const std::string key = hidden_preset_key(type, selected.name);
+    auto original_it = m_system_override_originals.find(key);
+    const DynamicPrintConfig &original = original_it != m_system_override_originals.end() ? original_it->second : selected.config;
+
+    json options = json::object();
+    for (const std::string &opt_key : edited.config.diff(original)) {
+        if (imagemap_override_skips_key(opt_key) || !original.has(opt_key))
+            continue;
+        options[opt_key] = edited.config.opt_serialize(opt_key);
+    }
+
+    namespace bfs = boost::filesystem;
+    const bfs::path dir  = bfs::path(system_overrides_dir()) / Preset::get_type_string(type);
+    const bfs::path file = dir / imagemap_override_file_name(selected.name);
+    try {
+        if (options.empty()) {
+            boost::system::error_code ec;
+            bfs::remove(file, ec);
+        } else {
+            bfs::create_directories(dir);
+            json j;
+            j["name"]    = selected.name;
+            j["type"]    = Preset::get_type_string(type);
+            j["options"] = options;
+            boost::nowide::ofstream out(file.string());
+            out << j.dump(2);
+            out.close();
+            if (!out)
+                return "Could not write " + file.string();
+        }
+    } catch (const std::exception &err) {
+        return err.what();
+    }
+
+    if (original_it == m_system_override_originals.end() && !options.empty())
+        m_system_override_originals.emplace(key, selected.config);
+    else if (original_it != m_system_override_originals.end() && options.empty())
+        m_system_override_originals.erase(original_it);
+
+    // Keep the identity options of the stock preset, take every other value from the edits.
+    DynamicPrintConfig updated = edited.config;
+    for (const std::string &opt_key : updated.keys())
+        if (imagemap_override_skips_key(opt_key) && selected.config.has(opt_key))
+            updated.set_key_value(opt_key, selected.config.option(opt_key)->clone());
+    selected.config = updated;
+    edited.config   = updated;
+    edited.is_dirty = false;
+    selected.is_dirty = false;
+    collection->update_saved_preset_from_current_preset();
+    this->update_compatible(PresetSelectCompatibleType::Never);
+    return std::string();
+}
+
+std::string PresetBundle::reset_system_preset_override(Preset::Type type, const std::string &name)
+{
+    PresetCollection *collection = this->collection_for_type(type);
+    if (collection == nullptr)
+        return "Unsupported preset type.";
+    namespace bfs = boost::filesystem;
+    const bfs::path file = bfs::path(system_overrides_dir()) / Preset::get_type_string(type) / imagemap_override_file_name(name);
+    boost::system::error_code ec;
+    bfs::remove(file, ec);
+    if (ec)
+        return ec.message();
+
+    const std::string key = hidden_preset_key(type, name);
+    auto original_it = m_system_override_originals.find(key);
+    if (original_it == m_system_override_originals.end())
+        return std::string();
+    Preset *preset = collection->find_preset(name, false);
+    if (preset != nullptr && preset->is_system && preset->name == name) {
+        preset->config = original_it->second;
+        if (collection->get_selected_preset().name == name) {
+            Preset &edited = collection->get_edited_preset();
+            edited.config   = original_it->second;
+            edited.is_dirty = false;
+            collection->update_saved_preset_from_current_preset();
+        }
+    }
+    m_system_override_originals.erase(original_it);
+    this->update_compatible(PresetSelectCompatibleType::Never);
+    return std::string();
+}
+
 const std::string& PresetBundle::get_preset_name_by_alias( const Preset::Type& preset_type, const std::string& alias) const
 {
     if (preset_type == Preset::TYPE_INVALID)
@@ -4060,6 +4290,8 @@ void PresetBundle::load_selections(AppConfig &config, const PresetPreferences& p
     // Update visibility of filament and sla material presets
     this->load_installed_filaments(config);
     this->load_installed_sla_materials(config);
+    // ImageMap Preset Manager: presets the user hid.
+    this->apply_hidden_presets(config);
 
     // Parse the initial print / filament / printer profile names.
     // std::string initial_sla_print_profile_name    = remove_ini_suffix(config.get("presets", PRESET_SLA_PRINT_NAME));

@@ -299,6 +299,7 @@ src/slic3r/GUI/StepMeshDialog.cpp
 src/slic3r/GUI/GeometryImportDialog.cpp
 src/slic3r/GUI/FilamentPickerDialog.hpp
 src/slic3r/GUI/PresetBundleDialog.cpp
+src/slic3r/GUI/PresetManagerDialog.cpp
 src/slic3r/GUI/ExportPresetBundleDialog.cpp
 src/slic3r/GUI/DesktopIntegrationDialog.cpp
 src/slic3r/GUI/Downloader.cpp

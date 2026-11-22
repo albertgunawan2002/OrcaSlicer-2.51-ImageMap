@@ -473,6 +473,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Preferences.hpp
     GUI/PresetBundleDialog.cpp
     GUI/PresetBundleDialog.hpp
+    GUI/PresetManagerDialog.cpp
+    GUI/PresetManagerDialog.hpp
     GUI/ExportPresetBundleDialog.cpp
     GUI/ExportPresetBundleDialog.hpp
     GUI/PresetComboBoxes.cpp

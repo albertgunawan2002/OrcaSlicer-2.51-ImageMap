@@ -684,6 +684,27 @@ public:
     // If the "vendor" section is missing, enable all models and variants of the particular vendor.
     void                        load_installed_printers(const AppConfig &config);
 
+    // ImageMap Preset Manager: presets the user hid from the preset lists. Stored in the
+    // AppConfig section "imagemap_hidden_presets" under the key "<type>:<name>".
+    static const char*          HIDDEN_PRESETS_SECTION;
+    static std::string          hidden_preset_key(Preset::Type type, const std::string &name);
+    static bool                 is_preset_hidden(const AppConfig &config, Preset::Type type, const std::string &name);
+    // Clear is_visible on the hidden presets that are not selected.
+    void                        apply_hidden_presets(const AppConfig &config);
+
+    // ImageMap Preset Manager: user edits saved into stock (system) presets. Each edited stock
+    // preset has a JSON file in data_dir()/imagemap_system_overrides/<type>/ holding the options
+    // that differ from the vendor profile. They are applied right after the system presets load,
+    // before the user presets, so user presets based on an edited stock preset inherit the edits.
+    static std::string          system_overrides_dir();
+    // Writes the unsaved edits of the selected stock preset of this type into its override file
+    // and into the stock preset itself. Returns an error message, empty on success.
+    std::string                 save_system_preset_override(Preset::Type type);
+    // Deletes the override file and restores the vendor values. Returns an error message, empty on success.
+    std::string                 reset_system_preset_override(Preset::Type type, const std::string &name);
+    bool                        has_system_preset_override(Preset::Type type, const std::string &name) const;
+    PresetCollection*           collection_for_type(Preset::Type type);
+
     const std::string&          get_preset_name_by_alias(const Preset::Type& preset_type, const std::string& alias) const;
 
     const int                   get_required_hrc_by_filament_type(const std::string& filament_type) const;
@@ -745,6 +766,11 @@ public:
         const std::atomic<bool>* cancel = nullptr, std::vector<std::string>* failed = nullptr);
 
 private:
+    // ImageMap: applies the files in system_overrides_dir() to the freshly loaded system presets.
+    void load_system_preset_overrides();
+    // Vendor configs of the stock presets that have an override, by "<type>:<name>".
+    std::map<std::string, DynamicPrintConfig> m_system_override_originals;
+
     // Orca: The fewest filaments the selected FFF printer runs with. A tool changer carries one
     // filament per tool, so it needs one per nozzle. A printer feeding filaments through shared
     // nozzles (single_extruder_multi_material, e.g. a Bambu Lab H2D) maps any number of them onto

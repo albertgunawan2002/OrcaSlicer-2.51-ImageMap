@@ -1,4 +1,5 @@
 #include "MainFrame.hpp"
+#include "PresetManagerDialog.hpp"
 #include "slic3r/plugin/host/PluginPages.hpp"
 
 #include <wx/event.h>
@@ -3663,6 +3664,15 @@ void MainFrame::init_menubar_as_editor()
         "", nullptr, []() { return true; }, this);
 
     append_menu_item(
+        top_menu, wxID_ANY, _L("Preset Manager"), _L("Hide or show presets and save edits into stock presets"),
+        [this](wxCommandEvent &) {
+            PresetManagerDialog dlg(this);
+            dlg.ShowModal();
+            plater()->get_current_canvas3D()->force_set_focus();
+        },
+        "", nullptr, []() { return true; }, this);
+
+    append_menu_item(
         top_menu, wxID_ANY, _L("Sync Presets"), _L("Pull and apply the latest presets from OrcaCloud"),
         [this](wxCommandEvent&) {
             if (!wxGetApp().is_user_login()) {
@@ -3762,6 +3772,15 @@ void MainFrame::init_menubar_as_editor()
         fileMenu, wxID_ANY, _L("Preset Bundle"), "",
         [this](wxCommandEvent&) {
             wxGetApp().open_presetbundledialog();
+            plater()->get_current_canvas3D()->force_set_focus();
+        },
+        "", nullptr, []() { return true; }, this);
+
+    append_menu_item(
+        fileMenu, wxID_ANY, _L("Preset Manager"), _L("Hide or show presets and save edits into stock presets"),
+        [this](wxCommandEvent &) {
+            PresetManagerDialog dlg(this);
+            dlg.ShowModal();
             plater()->get_current_canvas3D()->force_set_focus();
         },
         "", nullptr, []() { return true; }, this);
