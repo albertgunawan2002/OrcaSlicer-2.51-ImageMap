@@ -1003,6 +1003,19 @@ protected:
 
     // BBS
     Print* m_curr_print = nullptr;
+    // The layers of every object below the layer being exported, which needs_retraction() searches for
+    // overhangs a travel crosses: collected once per z range rather than once per travel.
+    struct OverhangLayersCache
+    {
+        bool                     valid = false;
+        float                    z_min = 0.f;
+        float                    z_max = 0.f;
+        std::vector<size_t>      idx_of_object_sorted;
+        // Of each object, sorted by the area of their overhangs' bounding box, largest first.
+        std::vector<LayerPtrs>   layers_of_objects;
+        std::vector<BoundingBox> boundingBox_for_objects;
+        VecOfPoints              objects_instances_shift;
+    } m_overhang_layers_cache;
     unsigned int m_toolchange_count;
     coordf_t m_nominal_z;
     // Mixed-color sublayer state. Non-zero only while emitting a mixed slot's sub-layer:
@@ -1062,6 +1075,14 @@ protected:
     bool        path_uses_imagemap_texture_extrusion(const ExtrusionPath &path) const;
     std::string _extrude_imagemap(const ExtrusionPath &path, std::string description, double speed);
     std::optional<PreferredSeamPoint> texture_mapping_seam_hiding_hint(const ExtrusionLoop &loop);
+    // First point of the path in the slicing frame, for the per-point first-layer test.
+    Vec3d path_slicing_point(const ExtrusionPath &path) const;
+    // Flow in mm³ per mm the path is extruded with, after the flow ratios (the first layer's when `on_first_layer`).
+    double extrusion_mm3_per_mm(const ExtrusionPath &path, bool on_first_layer) const;
+    // Feed rate of a feature: its linear `speed`, or with volumetric speeds its flow divided by `mm3_per_mm`.
+    double feature_speed(double speed, const ConfigOptionFloatsOrPercentsNullable &volumetric_flow, double mm3_per_mm) const;
+    // Max flow in mm³/s of a path with this role, 0 for no limit.
+    double volumetric_speed_limit(ExtrusionRole role) const;
     bool _needSAFC(const ExtrusionPath &path);
     void print_machine_envelope(GCodeOutputStream& file, Print& print);
     void _print_first_layer_bed_temperature(GCodeOutputStream &file, Print &print, const std::string &gcode, unsigned int first_printing_extruder_id, bool wait);
